@@ -5,12 +5,14 @@ from talent_screener.composition_root.container import (
     ExternalAdapterRegistry,
     Phase3PipelineBundle,
     Phase4PipelineBundle,
+    Phase5PipelineBundle,
     RepositoryRegistry,
     build_in_memory_repositories,
     build_phase3_container,
     build_phase3_external_adapters,
     build_phase4_container,
     build_phase4_external_adapters,
+    build_phase5_container,
 )
 from talent_screener.composition_root.protocols import (
     ApplicationContainerPort,
@@ -25,6 +27,7 @@ __all__ = [
     "ExternalAdapterRegistry",
     "Phase3PipelineBundle",
     "Phase4PipelineBundle",
+    "Phase5PipelineBundle",
     "RepositoryRegistry",
     "UseCaseCatalogPort",
     "build_in_memory_repositories",
@@ -32,4 +35,5 @@ __all__ = [
     "build_phase3_external_adapters",
     "build_phase4_container",
     "build_phase4_external_adapters",
+    "build_phase5_container",
 ]

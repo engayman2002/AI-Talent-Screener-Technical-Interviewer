@@ -381,7 +381,20 @@ def test_robert_c_martin_coupling_metrics_and_main_sequence() -> None:
             f"D={metrics[core_infra].distance_from_main_sequence:.3f}"
         )
 
-    # 5. Composition Root is outermost consumer (Ca = 0 => I = 1.0)
+    # 5. Presentation layer stays predominantly concrete & decoupled from Infrastructure
+    pres_metrics = metrics["talent_screener.presentation"]
+    assert pres_metrics.total_classes >= 10
+    assert pres_metrics.abstractness <= 0.15, (
+        f"presentation too abstract: A={pres_metrics.abstractness:.3f}"
+    )
+    assert pres_metrics.instability >= 0.70, (
+        f"presentation instability too low: I={pres_metrics.instability:.3f}"
+    )
+    assert pres_metrics.distance_from_main_sequence <= 0.25, (
+        f"presentation breached Main Sequence: D={pres_metrics.distance_from_main_sequence:.3f}"
+    )
+
+    # 6. Composition Root is outermost consumer (Ca = 0 => I = 1.0)
     comp_root = metrics["talent_screener.composition_root"]
     assert comp_root.ca == 0
     assert comp_root.instability == 1.0

@@ -90,10 +90,20 @@ name = "Clean Architecture Inward Dependency Rule"
 type = "layers"
 layers = [
     "talent_screener.composition_root",
-    "talent_screener.presentation",
-    "talent_screener.infrastructure",
+    "talent_screener.presentation | talent_screener.infrastructure",
     "talent_screener.application",
     "talent_screener.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Presentation Cannot Import Infrastructure"
+type = "forbidden"
+source_modules = [
+    "talent_screener.presentation",
+]
+forbidden_modules = [
+    "talent_screener.infrastructure",
+    "talent_screener.composition_root",
 ]
 
 [[tool.importlinter.contracts]]

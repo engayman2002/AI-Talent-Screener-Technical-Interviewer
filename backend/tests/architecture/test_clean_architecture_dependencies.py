@@ -11,6 +11,7 @@ import pytest
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "talent_screener"
 DOMAIN_ROOT = SRC_ROOT / "domain"
 APPLICATION_ROOT = SRC_ROOT / "application"
+PRESENTATION_ROOT = SRC_ROOT / "presentation"
 CONTEXTS_ROOT = DOMAIN_ROOT / "contexts"
 
 FORBIDDEN_THIRD_PARTY_PACKAGES = frozenset(
@@ -140,3 +141,35 @@ def test_bounded_contexts_have_zero_cross_context_imports() -> None:
                     violations.append(f"{py_file}: cross-context import -> {mod_name}")
 
     assert not violations, "Cross-context coupling detected:\n" + "\n".join(violations)
+
+
+@pytest.mark.architecture
+def test_presentation_layer_never_imports_infrastructure_or_composition_root() -> None:
+    """Presentation must depend only on stdlib, domain, and application abstractions."""
+    pres_files = sorted(PRESENTATION_ROOT.rglob("*.py"))
+    assert pres_files, "Expected Python modules under presentation/."
+
+    violations: list[str] = []
+    for py_file in pres_files:
+        for mod_name in _extract_imported_modules(py_file):
+            top_level = mod_name.split(".")[0]
+            if mod_name.startswith("talent_screener.infrastructure"):
+                violations.append(f"{py_file}: forbidden infrastructure import -> {mod_name}")
+            elif mod_name.startswith("talent_screener.composition_root.container"):
+                violations.append(f"{py_file}: forbidden container import -> {mod_name}")
+            elif mod_name.startswith("talent_screener.composition_root"):
+                violations.append(
+                    f"{py_file}: upward composition_root import -> {mod_name}"
+                )
+            elif mod_name.startswith(
+                (
+                    "talent_screener.domain",
+                    "talent_screener.application",
+                    "talent_screener.presentation",
+                )
+            ):
+                continue
+            elif top_level not in sys.stdlib_module_names:
+                violations.append(f"{py_file}: non-stdlib transport dependency -> {mod_name}")
+
+    assert not violations, "Presentation dependency rule violations:\n" + "\n".join(violations)

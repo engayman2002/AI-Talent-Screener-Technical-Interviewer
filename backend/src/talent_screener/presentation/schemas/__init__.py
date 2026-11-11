@@ -1,3 +1,59 @@
-"""Presentation HTTP/WS schemas placeholder (Phase 5)."""
+"""Presentation Schema Envelopes & Wire-Format DTO Translators."""
 
-__all__: list[str] = []
+from talent_screener.presentation.exceptions import FieldViolation
+from talent_screener.presentation.schemas.envelopes import (
+    ApiResponseEnvelope,
+    HttpRequest,
+    HttpResponse,
+    ProblemDetailsResponse,
+    ResponseMeta,
+    serialize_value,
+)
+from talent_screener.presentation.schemas.payloads import (
+    MAX_SCREENING_BATCH_FILES,
+    parse_comparison_matrix,
+    parse_complete_interview,
+    parse_create_requisition,
+    parse_enum,
+    parse_erasure,
+    parse_execute_matching,
+    parse_generate_report,
+    parse_initialize_interview,
+    parse_initiate_batch,
+    parse_provision_tenant,
+    parse_record_consent,
+    parse_record_telemetry,
+    parse_recruiter_override,
+    parse_revoke_consent,
+    parse_terminate_interview,
+    parse_update_rubric,
+    parse_uuid,
+)
+
+__all__ = [
+    "MAX_SCREENING_BATCH_FILES",
+    "ApiResponseEnvelope",
+    "FieldViolation",
+    "HttpRequest",
+    "HttpResponse",
+    "ProblemDetailsResponse",
+    "ResponseMeta",
+    "parse_comparison_matrix",
+    "parse_complete_interview",
+    "parse_create_requisition",
+    "parse_enum",
+    "parse_erasure",
+    "parse_execute_matching",
+    "parse_generate_report",
+    "parse_initialize_interview",
+    "parse_initiate_batch",
+    "parse_provision_tenant",
+    "parse_record_consent",
+    "parse_record_telemetry",
+    "parse_recruiter_override",
+    "parse_revoke_consent",
+    "parse_terminate_interview",
+    "parse_update_rubric",
+    "parse_uuid",
+    "serialize_value",
+]

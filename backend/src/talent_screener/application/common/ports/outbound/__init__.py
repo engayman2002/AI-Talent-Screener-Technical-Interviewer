@@ -23,6 +23,7 @@ from talent_screener.application.common.ports.outbound.observability_tracer impo
 from talent_screener.application.common.ports.outbound.pii_vault import PiiVaultPort
 from talent_screener.application.common.ports.outbound.realtime_progress_publisher import (
     RealtimeProgressPublisherPort,
+    RealtimeProgressStreamPort,
 )
 from talent_screener.application.common.ports.outbound.task_queue_dispatcher import (
     TaskQueueDispatcherPort,
@@ -44,6 +45,7 @@ __all__ = [
     "ObservabilityTracerPort",
     "PiiVaultPort",
     "RealtimeProgressPublisherPort",
+    "RealtimeProgressStreamPort",
     "TaskQueueDispatcherPort",
     "TraceSpanPort",
     "TransactionalUnitOfWorkPort",

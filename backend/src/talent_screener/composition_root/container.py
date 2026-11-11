@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from talent_screener.application.common.ports.outbound import (
@@ -108,11 +109,13 @@ from talent_screener.infrastructure.ai_adapters.vector_store import (
     HybridVectorSearchAdapter,
 )
 from talent_screener.infrastructure.messaging import (
+    BatchIngestionWorkerCoordinator,
     FencingTokenDistributedLockAdapter,
     InMemoryDeadLetterQueue,
     InMemoryDomainEventBus,
-    InMemoryRealtimeProgressPublisher,
     InMemoryTaskQueueDispatcher,
+    PriorityReservedTokenBucketLimiter,
+    ReplayableSseProgressBroker,
     ResilientTaskExecutor,
 )
 from talent_screener.infrastructure.observability import InMemoryObservabilityTracer
@@ -137,6 +140,21 @@ from talent_screener.infrastructure.security import (
     EnvelopeCipherProtocol,
     SignatureAndHeuristicVirusScannerAdapter,
 )
+from talent_screener.presentation.middleware import (
+    BearerTokenAuthenticator,
+    ExceptionToProblemDetailsTranslator,
+    IdempotencyMiddleware,
+    TenantRateLimiter,
+)
+from talent_screener.presentation.rest import (
+    DocumentIntelligenceController,
+    EvaluationController,
+    IdentityController,
+    LiveInterviewController,
+    RecruitmentController,
+    RestApiRouter,
+)
+from talent_screener.presentation.websocket import WebSocketInterviewGateway
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,7 +280,7 @@ def build_phase4_external_adapters(
         virus_scanner=virus_scanner,
         pii_vault=pii_vault,
         task_dispatcher=InMemoryTaskQueueDispatcher(),
-        progress_publisher=InMemoryRealtimeProgressPublisher(),
+        progress_publisher=ReplayableSseProgressBroker(),
         observability_tracer=tracer,
         document_parser=document_parser,
         hybrid_vector_search=hybrid_vector_search,
@@ -375,6 +393,171 @@ def build_phase4_container(
         guardrail=adapters.prompt_guardrail,
         token_budget_enforcer=adapters.token_budget_enforcer,
         distributed_lock=adapters.distributed_lock,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Phase5PipelineBundle:
+    """Bundled DI container plus Phase 5 REST/WS Gateway, Middleware, SSE & Priority Workers."""
+
+    container: ApplicationContainer
+    adapters: ExternalAdapterRegistry
+    dlq: InMemoryDeadLetterQueue
+    resilient_executor: ResilientTaskExecutor
+    interview_graph: LangGraphAdaptiveInterviewAdapter
+    guardrail: AdversarialPromptGuardrailAdapter
+    token_budget_enforcer: SlidingWindowTokenBudgetEnforcerAdapter
+    distributed_lock: FencingTokenDistributedLockAdapter
+    sse_broker: ReplayableSseProgressBroker
+    priority_limiter: PriorityReservedTokenBucketLimiter
+    batch_coordinator: BatchIngestionWorkerCoordinator
+    authenticator: BearerTokenAuthenticator
+    rate_limiter: TenantRateLimiter
+    rest_router: RestApiRouter
+    ws_gateway: WebSocketInterviewGateway
+
+
+def build_phase5_container(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+    checkpointer: InterviewStateCheckpointerProtocol | None = None,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
+    jwt_signing_key: bytes | None = None,
+    rate_limit_default_per_minute: int = 300,
+    bucket_rate_limits: Mapping[str, int] | None = None,
+    bucket_total_capacity: int = 100_000,
+    bucket_interview_reserve: int = 20_000,
+    bucket_matching_reserve: int = 15_000,
+    bucket_refill_tokens_per_second: float = 5_000.0,
+    clock_fn: Callable[[], float] | None = None,
+) -> Phase5PipelineBundle:
+    """Assemble full ApplicationContainer plus Phase 5 REST, SSE, WS, Middleware & Workers."""
+    adapters = build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=vector_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+        stt_driver=stt_driver,
+        tts_driver=tts_driver,
+        max_tokens_per_window=max_tokens_per_window,
+    )
+    container = ApplicationContainer(adapters=adapters)
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+
+    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
+    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
+    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
+    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    assert isinstance(adapters.progress_publisher, ReplayableSseProgressBroker)
+    assert isinstance(adapters.task_dispatcher, InMemoryTaskQueueDispatcher)
+
+    priority_limiter = PriorityReservedTokenBucketLimiter(
+        total_capacity=bucket_total_capacity,
+        interview_reserve=bucket_interview_reserve,
+        matching_reserve=bucket_matching_reserve,
+        refill_tokens_per_second=bucket_refill_tokens_per_second,
+        clock_fn=clock_fn,
+    )
+    batch_coordinator = BatchIngestionWorkerCoordinator(
+        task_dispatcher=adapters.task_dispatcher,
+        process_task_use_case=container.process_document_task,
+        get_batch_status_use_case=container.get_screening_batch_status,
+        progress_publisher=adapters.progress_publisher,
+        rate_limiter=priority_limiter,
+        resilient_executor=executor,
+    )
+
+    authenticator = BearerTokenAuthenticator(signing_key=jwt_signing_key, clock_fn=clock_fn)
+    rate_limiter = TenantRateLimiter(
+        default_limit_per_minute=rate_limit_default_per_minute,
+        bucket_limits=bucket_rate_limits,
+        clock_fn=clock_fn,
+    )
+    error_translator = ExceptionToProblemDetailsTranslator()
+    idempotency_mw = IdempotencyMiddleware(store=adapters.idempotency_store)
+
+    rest_router = RestApiRouter(
+        authenticator=authenticator,
+        rate_limiter=rate_limiter,
+        idempotency_middleware=idempotency_mw,
+        recruitment_controller=RecruitmentController(
+            create_requisition=container.create_job_requisition,
+            publish_requisition=container.publish_job_requisition,
+            update_rubric=container.update_job_rubric,
+            archive_requisition=container.archive_job_requisition,
+            get_requisition=container.get_job_requisition,
+        ),
+        document_controller=DocumentIntelligenceController(
+            initiate_batch=container.initiate_screening_batch,
+            get_batch_status=container.get_screening_batch_status,
+            execute_matching=container.execute_hybrid_matching,
+            progress_stream=adapters.progress_publisher,
+        ),
+        interview_controller=LiveInterviewController(
+            initialize_interview=container.initialize_interview_session,
+            record_telemetry=container.record_client_telemetry,
+            terminate_interview=container.terminate_interview_early,
+            complete_interview=container.complete_interview_session,
+        ),
+        evaluation_controller=EvaluationController(
+            generate_report=container.generate_evaluation_report,
+            record_override=container.record_recruiter_override,
+            build_comparison_matrix=container.build_comparison_matrix,
+        ),
+        identity_controller=IdentityController(
+            provision_tenant=container.provision_tenant_account,
+            record_consent=container.record_candidate_consent,
+            revoke_consent=container.revoke_candidate_consent,
+            execute_erasure=container.execute_candidate_erasure,
+        ),
+        error_translator=error_translator,
+    )
+    ws_gateway = WebSocketInterviewGateway(
+        authenticator=authenticator,
+        lock_port=adapters.distributed_lock,
+        process_turn_use_case=container.process_candidate_turn,
+        record_telemetry_use_case=container.record_client_telemetry,
+        terminate_interview_use_case=container.terminate_interview_early,
+        stt_port=adapters.audio_stt,
+        tts_port=adapters.audio_tts,
+        error_translator=error_translator,
+    )
+
+    return Phase5PipelineBundle(
+        container=container,
+        adapters=adapters,
+        dlq=dlq,
+        resilient_executor=executor,
+        interview_graph=adapters.adaptive_interview_graph,
+        guardrail=adapters.prompt_guardrail,
+        token_budget_enforcer=adapters.token_budget_enforcer,
+        distributed_lock=adapters.distributed_lock,
+        sse_broker=adapters.progress_publisher,
+        priority_limiter=priority_limiter,
+        batch_coordinator=batch_coordinator,
+        authenticator=authenticator,
+        rate_limiter=rate_limiter,
+        rest_router=rest_router,
+        ws_gateway=ws_gateway,
     )
 
 

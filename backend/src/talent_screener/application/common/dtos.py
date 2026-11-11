@@ -105,6 +105,18 @@ class RealtimeProgressEventDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class SequencedProgressEventDTO:
+    """Monotonically ordered SSE/WebSocket progress event stored for replayable streaming."""
+
+    event_id: int
+    tenant_id: TenantId
+    channel: str
+    event_type: str
+    payload: Mapping[str, object]
+    emitted_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class TokenUsageRecordDTO:
     """FinOps LLM token and micro-USD cost accounting record."""
 

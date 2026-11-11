@@ -12,17 +12,42 @@ from talent_screener.domain.shared.uuid7 import generate_uuid7
 
 
 class InMemoryTaskQueueDispatcher:
-    """Deterministic in-memory TaskQueueDispatcherPort recording queued tasks."""
+    """Deterministic in-memory TaskQueueDispatcherPort with inspectable pending & audit logs."""
 
     def __init__(self) -> None:
         self._dispatched: list[TaskDispatchDTO] = []
+        self._pending: list[TaskDispatchDTO] = []
 
     @property
     def dispatched_tasks(self) -> tuple[TaskDispatchDTO, ...]:
         return tuple(self._dispatched)
 
+    def pending_count(self) -> int:
+        """Return number of queued tasks waiting to be drained by workers."""
+        return len(self._pending)
+
+    def pending_tasks(self) -> tuple[TaskDispatchDTO, ...]:
+        """Return immutable snapshot of unconsumed queued tasks."""
+        return tuple(self._pending)
+
+    def drain_pending(self, max_items: int | None = None) -> tuple[TaskDispatchDTO, ...]:
+        """Pop up to ``max_items`` (or all) pending tasks for worker scheduling."""
+        if max_items is None or max_items >= len(self._pending):
+            drained = tuple(self._pending)
+            self._pending.clear()
+            return drained
+        count = max(0, max_items)
+        drained = tuple(self._pending[:count])
+        del self._pending[:count]
+        return drained
+
+    def requeue(self, task: TaskDispatchDTO) -> None:
+        """Push a deferred or backpressured task back onto the pending queue."""
+        self._pending.append(task)
+
     async def dispatch(self, task: TaskDispatchDTO) -> str:
         self._dispatched.append(task)
+        self._pending.append(task)
         return f"task-{generate_uuid7()}"
 
     async def dispatch_batch(self, tasks: Sequence[TaskDispatchDTO]) -> tuple[str, ...]:

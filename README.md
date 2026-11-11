@@ -4,6 +4,7 @@
 ![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
 ![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
 ![Phase 4](https://img.shields.io/badge/Phase%204-Complete-brightgreen)
+![Phase 5](https://img.shields.io/badge/Phase%205-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![Typing](https://img.shields.io/badge/mypy--strict-passing-success)
@@ -20,7 +21,8 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 2. **Application Layer (`backend/src/talent_screener/application/`):** 100% pure Python Standard Library orchestration layer containing **22 Single-Responsibility Use Case Interactors**, segregated Inbound & Outbound `Protocol` Ports, immutable `@dataclass(frozen=True, slots=True)` Request/Response DTO boundaries, and cross-context Domain Event choreography handlers.
 3. **Phase 3 Document Intelligence & Hybrid Vector Infrastructure (`infrastructure/`, `composition_root/`):** Concrete Document Intelligence pipeline adapters wired via `build_phase3_container()` — malware/magic-byte virus scanner, zero-trust cryptographic PII vault (`ADR-008` with $O(1)$ GDPR crypto-shredding), tenant-scoped object storage, full-jitter retry & DLQ resilience, layout-aware PDF/DOCX/Text normalizer, anti-hallucination grounding verifier, LangChain structured extraction ACL, `ADR-004` Parent-Child hierarchical chunker, BM25 + dense vector encoders, and multi-tenant `HybridVectorSearchAdapter`.
 4. **Phase 4 Stateful Adaptive Interview Engine & Security Guardrails (`infrastructure/ai_adapters/langgraph_interview/`, `composition_root/`):** Production `ADR-005` 4-Plane LangGraph execution engine wired via `build_phase4_container()` — tenant-isolated `ADR-009` fenced state checkpointer, XML-delimited cognitive nodes (`QuestionGeneratorNode`, `EvaluationNode`, `SocraticFollowUpNode`, `ScoringVerificationNode`), piecewise P1–P6 `AdaptiveEdgeRouter`, `ADR-012` adversarial prompt-injection firewall, `ADR-013` sliding-window FinOps token budget enforcer, monotonic fencing distributed lock, and streaming STT/TTS audio ACLs.
-5. **Remaining Infrastructure & Presentation Layers (Upcoming Phases):** PostgreSQL relational Data Mappers & Transactional Outbox, FastAPI REST/SSE, bi-directional WebSocket voice/text gateway, and Next.js frontend workspace.
+5. **Phase 5 Presentation API, RFC 9457 Governance, Priority Batch Orchestration & WebSocket Protocol (`presentation/`, `infrastructure/messaging/`):** Clean-Architecture delivery layer wired via `build_phase5_container()` featuring a 20-endpoint v1 REST API router, RFC 9457 `ProblemDetailsResponse` translator (`400`–`503`), HS256 Bearer JWT authentication & RBAC/cross-tenant middleware, SHA-256 `Idempotency-Key` replay, per-tenant HTTP rate limits, `ADR-006` `PriorityReservedTokenBucketLimiter` + `BatchIngestionWorkerCoordinator` (WFQ + Little's Law bounds), replayable `Last-Event-ID` SSE progress streams, and `ADR-007` full-duplex WebSocket gateway (`/v1/interviews/{session_id}/ws`) with adaptive silence thresholds ($T_{\text{silence}}$) and preemptive TTS barge-in cancellation.
+6. **Remaining Infrastructure & Frontend Layers (Upcoming Phases):** PostgreSQL relational Data Mappers & Transactional Outbox and Next.js App Router frontend workspace.
 
 ### Core Bounded Contexts
 
@@ -43,7 +45,7 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Live Adaptive Interview** | `application/live_interview/` | `InitializeInterviewSessionUseCase`, `ProcessCandidateTurnUseCase`, `RecordClientTelemetryUseCase`, `TerminateInterviewEarlyUseCase`, `CompleteInterviewSessionUseCase`, `AudioSttPort`, `AudioTtsPort`, `PromptGuardrailPort`, `TokenBudgetEnforcerPort`, `AdaptiveInterviewGraphPort` |
 | **Evaluation & Analytics** | `application/evaluation_analytics/` | `GenerateEvaluationReportUseCase`, `RecordRecruiterOverrideUseCase`, `BuildCandidateComparisonMatrixUseCase`, `TriggerEvaluationReportOnInterviewCompletedHandler` |
 | **Identity & Governance** | `application/identity_governance/` | `ProvisionTenantAccountUseCase`, `RecordCandidateConsentUseCase`, `RevokeCandidateConsentUseCase`, `ExecuteCandidateErasureUseCase` |
-| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `Phase3PipelineBundle`, `Phase4PipelineBundle`, `build_phase3_container`, `build_phase4_container` |
+| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `Phase3PipelineBundle`, `Phase4PipelineBundle`, `Phase5PipelineBundle`, `build_phase3_container`, `build_phase4_container`, `build_phase5_container` |
 
 ### Phase 3 Document Intelligence, PII Vault & Hybrid Vector Adapters (`infrastructure/`)
 
@@ -64,6 +66,15 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Adversarial Prompt Guardrail (`ADR-012`)** | `infrastructure/security/prompt_guardrail.py` | `AdversarialPromptGuardrailAdapter` ($\mathcal{R}_{\text{adv}}$ risk bands, Unicode/NFKC & zero-width smuggling neutralization, Base64/Hex encoded attack decoding, delimiter & instruction-override blocking) |
 | **FinOps Token Budget & Fencing Lock (`ADR-013`)** | `infrastructure/ai_adapters/langgraph_interview/`, `infrastructure/messaging/` | `SlidingWindowTokenBudgetEnforcerAdapter` (session ceilings, sliding-window burst caps, micro-USD tracking), `FencingTokenDistributedLockAdapter` (monotonic epochs, TTL reclamation, stale-release isolation) |
 | **Audio Speech ACLs** | `infrastructure/ai_adapters/audio_adapters.py` | `StreamingAudioSttAdapter`, `StreamingAudioTtsAdapter`, `SttDriverProtocol`, `TtsDriverProtocol`, silence/RMS energy validation & `[0.0, 600.0]` WPM clamping |
+
+### Phase 5 Presentation API Catalog, Streaming Workers & WebSocket Protocol (`presentation/`, `infrastructure/messaging/`)
+
+| Subsystem | Package Path | Implemented Routers, Middleware, Brokers & Gateways |
+| :--- | :--- | :--- |
+| **RESTful API Catalog & Envelopes** | `presentation/rest/`, `presentation/schemas/` | `RestApiRouter` (20 v1 endpoints across all 5 Bounded Contexts), `RecruitmentController`, `DocumentIntelligenceController`, `LiveInterviewController`, `EvaluationController`, `IdentityController`, `ApiResponseEnvelope[T]`, `ProblemDetailsResponse` (RFC 9457) |
+| **Security, Idempotency & Error Middleware** | `presentation/middleware/`, `presentation/exceptions.py` | `BearerTokenAuthenticator` (HS256 HMAC-SHA256 JWT, RBAC scopes, cross-tenant `403`), `ExceptionToProblemDetailsTranslator` (`400`, `401`, `403`, `404`, `405`, `409`, `422`, `429`, `502`, `503`), `IdempotencyMiddleware` (`Idempotency-Key` + SHA-256 fingerprint), `TenantRateLimiter` (`X-RateLimit-*`, `Retry-After`) |
+| **Priority Token Bucket, WFQ Worker & SSE (`ADR-006`)** | `infrastructure/messaging/` | `PriorityReservedTokenBucketLimiter` (`CRITICAL_INTERVIEW`, `INTERACTIVE_MATCHING`, `BULK_INGESTION` reserve floors), `BatchIngestionWorkerCoordinator` (WFQ tenant fair-queuing, Little's Law semaphore, `ResilientTaskExecutor`), `ReplayableSseProgressBroker` (`Last-Event-ID` ring-buffer replay) |
+| **Full-Duplex WebSocket Gateway (`ADR-007`)** | `presentation/websocket/` | `WebSocketInterviewGateway` (`/v1/interviews/{session_id}/ws`, `session.ready`, `session.state_sync` reconnect recovery, `audio.chunk`, `candidate.utterance`, `candidate.barge_in`, `telemetry.snapshot`), `compute_adaptive_silence_threshold_ms` ($T_{\text{silence}}$), `BargeInStreamController` (`tts.flush_interrupt`) |
 
 ---
 
@@ -89,8 +100,12 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - Cognitive nodes (`QuestionGeneratorNode`, `EvaluationNode`, `SocraticFollowUpNode`, `ScoringVerificationNode`) behind injectable model Protocols and `<untrusted_candidate_response>` XML boundary isolation
   - `AdversarialPromptGuardrailAdapter`, `SlidingWindowTokenBudgetEnforcerAdapter`, `FencingTokenDistributedLockAdapter`, and `StreamingAudioSttAdapter` / `StreamingAudioTtsAdapter`
   - End-to-end adaptive interview Scenarios A/B/C (mastery escalation, Socratic $N_{\text{probe}} \le 2$ enforcement, telemetry + injection high-risk alert & automatic `EvaluationReport` synthesis) wired via `build_phase4_container()`
-- [ ] **Phase 5:** FastAPI REST, SSE Batch Telemetry, PostgreSQL Adapters & Full-Duplex WebSocket Voice/Text Gateway
-- [ ] **Phase 6:** Next.js App Router Frontend Workspace & Live Interview Portal
+- [x] **Phase 5: RESTful API Catalog, RFC 9457 Error Governance, Priority Batch Orchestration, SSE & WebSocket Protocol** — **Complete**
+  - Clean Architecture `presentation/` layer isolated from `infrastructure/` (`import-linter` 5/5 contracts kept + AST dependency & coupling fitness tests)
+  - All 20 REST endpoints across Recruitment, Document Intelligence, Live Interview, Evaluation, and Identity Governance guarded by HS256 JWT auth, RBAC scopes, cross-tenant `403` isolation, SHA-256 idempotency replay/conflict detection, and per-tenant HTTP rate limits
+  - `ADR-006` `PriorityReservedTokenBucketLimiter`, `BatchIngestionWorkerCoordinator` (WFQ + Little's Law concurrency), and `ReplayableSseProgressBroker` supporting `Last-Event-ID` resumption
+  - `ADR-007` `WebSocketInterviewGateway` with reconnection delta recovery (`session.state_sync`), adaptive end-of-turn silence ($T_{\text{silence}}$), and preemptive `BargeInStreamController` TTS cancellation wired via `build_phase5_container()`
+- [ ] **Phase 6:** PostgreSQL Relational Data Mappers, Transactional Outbox & Next.js Frontend Workspace
 
 ---
 
