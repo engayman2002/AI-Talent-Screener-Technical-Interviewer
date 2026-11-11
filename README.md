@@ -1,6 +1,7 @@
 # AI Talent Screener & Technical Interviewer
 
 ![Phase 1](https://img.shields.io/badge/Phase%201-Complete-brightgreen)
+![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![Typing](https://img.shields.io/badge/mypy--strict-passing-success)
@@ -14,8 +15,9 @@ An enterprise **AI Talent Screener & Stateful Adaptive Technical Interviewer** e
 Manual high-volume technical screening breaks down under heterogeneous resume formats, keyword-based ATS false negatives, resume exaggeration, and hundreds of repetitive L1 phone screens. This platform separates deterministic business policies, mathematical scoring, and cognitive state machines from volatile AI frameworks (`LangChain`, `LangGraph`, LLM vendors, vector stores) across strict concentric boundaries:
 
 1. **Domain Layer (`backend/src/talent_screener/domain/`):** 100% pure Python Standard Library core owning Aggregate Roots, Entities, immutable Value Objects, Domain Services, Domain Events, and Repository Protocols across all **5 Bounded Contexts**.
-2. **Application Layer (`backend/src/talent_screener/application/`):** Typed Outbound Driven Port `Protocol` interfaces (`DocumentParserPort`, `HybridVectorSearchPort`, `AdaptiveInterviewGraphPort`, `TransactionalUnitOfWorkPort`) and immutable conceptual DTO contracts.
-3. **Infrastructure & Presentation Layers (Upcoming Phases):** Concrete `LangChain` / `LangGraph` Anti-Corruption Layers (ACLs), PostgreSQL + PII Vault crypto-shredding persistence, hybrid vector search, FastAPI REST/SSE, and bi-directional WebSocket voice/text gateways.
+2. **Application Layer (`backend/src/talent_screener/application/`):** 100% pure Python Standard Library orchestration layer containing **22 Single-Responsibility Use Case Interactors**, segregated Inbound & Outbound `Protocol` Ports, immutable `@dataclass(frozen=True, slots=True)` Request/Response DTO boundaries, and cross-context Domain Event choreography handlers.
+3. **Composition Root & In-Memory Adapters (`backend/src/talent_screener/composition_root/`, `infrastructure/`):** Pure Manual Dependency Injection (`ApplicationContainer`), `InMemoryDomainEventBus`, and tenant-scoped `InMemoryUnitOfWork` / repository implementations for fast deterministic testing.
+4. **External Infrastructure & Presentation Layers (Upcoming Phases):** Concrete `LangChain` / `LangGraph` Anti-Corruption Layers (ACLs), PostgreSQL + PII Vault crypto-shredding persistence, hybrid vector search, FastAPI REST/SSE, and bi-directional WebSocket voice/text gateways.
 
 ### Core Bounded Contexts
 
@@ -28,6 +30,18 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Evaluation & Analytics** | `domain/contexts/evaluation_analytics/` | `EvaluationReport` (evidence turn citations, SHA-256 finalization seal, append-only `RecruiterOverrideAudit`), `AuthenticityIndex`, `CompositeRubricScore` |
 | **Identity & Tenant Governance** | `domain/contexts/identity_governance/` | `TenantAccount`, `ConsentRecord` (GDPR Art. 17 erasure & crypto-shredding lifecycle), `QuotaPolicy`, `RetentionPolicy` |
 
+### Phase 2 Application Orchestration & Clean Architecture Governance
+
+| Module | Package Path | Implemented Use Cases, Handlers & Contracts |
+| :--- | :--- | :--- |
+| **Common Primitives** | `application/common/` | `ApplicationError` hierarchy (`ResourceNotFoundError`, `ResourceConflictError`, `IdempotencyConflictError`, `UnauthorizedTenantAccessError`, `QuotaExceededError`, `ExternalAdapterFailureError`, `GuardrailViolationError`), `UseCasePort`, `QueryUseCasePort`, `TransactionalUnitOfWorkPort`, `DomainEventBusPort`, `IdempotencyStorePort`, `DistributedLockPort`, `ObjectStoragePort`, `VirusScannerPort`, `PiiVaultPort`, `TaskQueueDispatcherPort`, `RealtimeProgressPublisherPort`, `ObservabilityTracerPort` |
+| **Recruitment Management** | `application/recruitment/` | `CreateJobRequisitionUseCase`, `PublishJobRequisitionUseCase`, `UpdateJobRubricUseCase`, `LockJobRequisitionRubricUseCase`, `ArchiveJobRequisitionUseCase`, `GetJobRequisitionUseCase`, `LockRubricOnBatchOrInterviewStartedHandler` |
+| **Document Intelligence** | `application/document_intelligence/` | `InitiateScreeningBatchUseCase`, `ProcessDocumentIngestionTaskUseCase`, `ExecuteHybridMatchingUseCase`, `GetScreeningBatchStatusUseCase`, `CandidateProfileReadModelPort`, `DocumentParserPort`, `HybridVectorSearchPort` |
+| **Live Adaptive Interview** | `application/live_interview/` | `InitializeInterviewSessionUseCase`, `ProcessCandidateTurnUseCase`, `RecordClientTelemetryUseCase`, `TerminateInterviewEarlyUseCase`, `CompleteInterviewSessionUseCase`, `AudioSttPort`, `AudioTtsPort`, `PromptGuardrailPort`, `TokenBudgetEnforcerPort`, `AdaptiveInterviewGraphPort` |
+| **Evaluation & Analytics** | `application/evaluation_analytics/` | `GenerateEvaluationReportUseCase`, `RecordRecruiterOverrideUseCase`, `BuildCandidateComparisonMatrixUseCase`, `TriggerEvaluationReportOnInterviewCompletedHandler` |
+| **Identity & Governance** | `application/identity_governance/` | `ProvisionTenantAccountUseCase`, `RecordCandidateConsentUseCase`, `RevokeCandidateConsentUseCase`, `ExecuteCandidateErasureUseCase` |
+| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort` |
+
 ---
 
 ## Implementation Roadmap & Status
@@ -37,7 +51,11 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - All 5 Bounded Contexts with mathematical invariants, Domain Services, Events, and Repository Protocols
   - Typed Outbound Application Ports & DTO contracts (`DocumentParserPort`, `HybridVectorSearchPort`, `AdaptiveInterviewGraphPort`, `TransactionalUnitOfWorkPort`)
   - Unit tests, AST Clean Architecture fitness suite, `mypy --strict`, `ruff`, and `import-linter` contracts
-- [ ] **Phase 2:** Application Use Cases, CQRS Query Handlers & Domain Event Dispatching
+- [x] **Phase 2: Clean Architecture Application Layer, SOLID Governance & Cross-Context Event Choreography** — **Complete**
+  - Zero-framework `application/` layer with 22 single-responsibility Use Cases, segregated Inbound/Outbound `Protocol` Ports, and frozen DTO Anti-Corruption boundaries
+  - Cross-context event choreography (`LockRubricOnBatchOrInterviewStartedHandler`, `TriggerEvaluationReportOnInterviewCompletedHandler`) via `InMemoryDomainEventBus`
+  - Pure manual Dependency Injection in `ApplicationContainer` (`composition_root/`) and tenant-scoped `InMemoryUnitOfWork`
+  - SOLID fitness & Robert C. Martin Coupling Metrics ($C_a, C_e, I, A, D$) verification (`test_solid_and_coupling_metrics.py`) alongside `import-linter` (4/4 contracts kept)
 - [ ] **Phase 3:** Persistence Adapters, PostgreSQL Data Mappers, Cryptographic PII Vault & Transactional Outbox
 - [ ] **Phase 4:** LangChain Extraction & Hybrid Vector Search Adapters + LangGraph Adaptive Interview Graph
 - [ ] **Phase 5:** FastAPI REST, SSE Batch Telemetry & Full-Duplex WebSocket Voice/Text Gateway
