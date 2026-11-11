@@ -4,10 +4,13 @@ from talent_screener.composition_root.container import (
     ApplicationContainer,
     ExternalAdapterRegistry,
     Phase3PipelineBundle,
+    Phase4PipelineBundle,
     RepositoryRegistry,
     build_in_memory_repositories,
     build_phase3_container,
     build_phase3_external_adapters,
+    build_phase4_container,
+    build_phase4_external_adapters,
 )
 from talent_screener.composition_root.protocols import (
     ApplicationContainerPort,
@@ -21,9 +24,12 @@ __all__ = [
     "EventChoreographyWiringPort",
     "ExternalAdapterRegistry",
     "Phase3PipelineBundle",
+    "Phase4PipelineBundle",
     "RepositoryRegistry",
     "UseCaseCatalogPort",
     "build_in_memory_repositories",
     "build_phase3_container",
     "build_phase3_external_adapters",
+    "build_phase4_container",
+    "build_phase4_external_adapters",
 ]

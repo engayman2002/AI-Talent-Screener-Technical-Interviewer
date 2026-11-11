@@ -84,22 +84,31 @@ from talent_screener.domain.contexts.live_interview import (
     InterviewSessionStartedEvent,
 )
 from talent_screener.domain.contexts.recruitment import JobRequisitionRepositoryPort
-from talent_screener.infrastructure.ai_adapters.interview_defaults import (
-    InMemoryTokenBudgetEnforcerAdapter,
-    StubAdaptiveInterviewGraphAdapter,
-    StubAudioSttAdapter,
-    StubAudioTtsAdapter,
-    StubPromptGuardrailAdapter,
+from talent_screener.infrastructure.ai_adapters.audio_adapters import (
+    StreamingAudioSttAdapter,
+    StreamingAudioTtsAdapter,
+    SttDriverProtocol,
+    TtsDriverProtocol,
 )
 from talent_screener.infrastructure.ai_adapters.langchain_parser import (
     LangChainDocumentParserAdapter,
     StructuredExtractionRunnableProtocol,
+)
+from talent_screener.infrastructure.ai_adapters.langgraph_interview import (
+    InterviewStateCheckpointerProtocol,
+    InterviewSynthesisModelProtocol,
+    LangGraphAdaptiveInterviewAdapter,
+    QuestionGenerationModelProtocol,
+    SlidingWindowTokenBudgetEnforcerAdapter,
+    SocraticProbeModelProtocol,
+    TurnEvaluationModelProtocol,
 )
 from talent_screener.infrastructure.ai_adapters.vector_store import (
     DenseEmbeddingClientProtocol,
     HybridVectorSearchAdapter,
 )
 from talent_screener.infrastructure.messaging import (
+    FencingTokenDistributedLockAdapter,
     InMemoryDeadLetterQueue,
     InMemoryDomainEventBus,
     InMemoryRealtimeProgressPublisher,
@@ -110,7 +119,6 @@ from talent_screener.infrastructure.observability import InMemoryObservabilityTr
 from talent_screener.infrastructure.persistence import (
     InMemoryCandidateProfileRepository,
     InMemoryConsentRecordRepository,
-    InMemoryDistributedLock,
     InMemoryEvaluationReportRepository,
     InMemoryHybridVectorStoreBackend,
     InMemoryIdempotencyStore,
@@ -124,6 +132,7 @@ from talent_screener.infrastructure.persistence import (
     VectorStoreBackendProtocol,
 )
 from talent_screener.infrastructure.security import (
+    AdversarialPromptGuardrailAdapter,
     CryptographicPiiVaultAdapter,
     EnvelopeCipherProtocol,
     SignatureAndHeuristicVirusScannerAdapter,
@@ -189,7 +198,21 @@ class Phase3PipelineBundle:
     resilient_executor: ResilientTaskExecutor
 
 
-def build_phase3_external_adapters(
+@dataclass(frozen=True, slots=True)
+class Phase4PipelineBundle:
+    """Bundled DI container plus Phase 4 stateful adaptive interview adapters and DLQ executor."""
+
+    container: ApplicationContainer
+    adapters: ExternalAdapterRegistry
+    dlq: InMemoryDeadLetterQueue
+    resilient_executor: ResilientTaskExecutor
+    interview_graph: LangGraphAdaptiveInterviewAdapter
+    guardrail: AdversarialPromptGuardrailAdapter
+    token_budget_enforcer: SlidingWindowTokenBudgetEnforcerAdapter
+    distributed_lock: FencingTokenDistributedLockAdapter
+
+
+def build_phase4_external_adapters(
     *,
     llm_client: StructuredExtractionRunnableProtocol | None = None,
     embedding_client: DenseEmbeddingClientProtocol | None = None,
@@ -197,8 +220,16 @@ def build_phase3_external_adapters(
     cipher: EnvelopeCipherProtocol | None = None,
     master_kek: bytes | None = None,
     grounding_threshold: float = 0.85,
+    checkpointer: InterviewStateCheckpointerProtocol | None = None,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
 ) -> ExternalAdapterRegistry:
-    """Wire all concrete Phase 3 Document Intelligence, Security & Vector Search adapters."""
+    """Wire concrete Phase 3 & Phase 4 Document, Security, Vector, and LangGraph adapters."""
     object_storage = TenantScopedObjectStorageAdapter()
     virus_scanner = SignatureAndHeuristicVirusScannerAdapter()
     pii_vault = CryptographicPiiVaultAdapter(cipher=cipher, master_kek=master_kek)
@@ -217,9 +248,16 @@ def build_phase3_external_adapters(
         backend=resolved_backend,
         embedding_client=embedding_client,
     )
+    adaptive_interview_graph = LangGraphAdaptiveInterviewAdapter(
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+    )
     return ExternalAdapterRegistry(
         idempotency_store=InMemoryIdempotencyStore(),
-        distributed_lock=InMemoryDistributedLock(),
+        distributed_lock=FencingTokenDistributedLockAdapter(),
         object_storage=object_storage,
         virus_scanner=virus_scanner,
         pii_vault=pii_vault,
@@ -228,11 +266,33 @@ def build_phase3_external_adapters(
         observability_tracer=tracer,
         document_parser=document_parser,
         hybrid_vector_search=hybrid_vector_search,
-        adaptive_interview_graph=StubAdaptiveInterviewGraphAdapter(),
-        audio_stt=StubAudioSttAdapter(),
-        audio_tts=StubAudioTtsAdapter(),
-        prompt_guardrail=StubPromptGuardrailAdapter(),
-        token_budget_enforcer=InMemoryTokenBudgetEnforcerAdapter(),
+        adaptive_interview_graph=adaptive_interview_graph,
+        audio_stt=StreamingAudioSttAdapter(driver=stt_driver),
+        audio_tts=StreamingAudioTtsAdapter(driver=tts_driver),
+        prompt_guardrail=AdversarialPromptGuardrailAdapter(),
+        token_budget_enforcer=SlidingWindowTokenBudgetEnforcerAdapter(
+            max_tokens_per_window=max_tokens_per_window
+        ),
+    )
+
+
+def build_phase3_external_adapters(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+) -> ExternalAdapterRegistry:
+    """Wire all concrete Phase 3 & Phase 4 adapters for backward-compatible container startup."""
+    return build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=vector_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
     )
 
 
@@ -262,6 +322,59 @@ def build_phase3_container(
         adapters=adapters,
         dlq=dlq,
         resilient_executor=executor,
+    )
+
+
+def build_phase4_container(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+    checkpointer: InterviewStateCheckpointerProtocol | None = None,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
+) -> Phase4PipelineBundle:
+    """Assemble a full ApplicationContainer wired with Phase 4 LangGraph interview adapters."""
+    adapters = build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=vector_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+        stt_driver=stt_driver,
+        tts_driver=tts_driver,
+        max_tokens_per_window=max_tokens_per_window,
+    )
+    container = ApplicationContainer(adapters=adapters)
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
+    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
+    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
+    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    return Phase4PipelineBundle(
+        container=container,
+        adapters=adapters,
+        dlq=dlq,
+        resilient_executor=executor,
+        interview_graph=adapters.adaptive_interview_graph,
+        guardrail=adapters.prompt_guardrail,
+        token_budget_enforcer=adapters.token_budget_enforcer,
+        distributed_lock=adapters.distributed_lock,
     )
 
 

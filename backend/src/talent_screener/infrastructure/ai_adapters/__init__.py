@@ -1,5 +1,15 @@
-"""AI Adapter Anti-Corruption Layer exports (Phase 3 Document Intelligence & Vector Store)."""
+"""AI Adapter Anti-Corruption Layer exports (Phases 3 & 4 Document, Vector, and Interview)."""
 
+from talent_screener.infrastructure.ai_adapters.audio_adapters import (
+    AudioSignalStats,
+    DeterministicSttDriver,
+    DeterministicTtsDriver,
+    RawTranscriptionResult,
+    StreamingAudioSttAdapter,
+    StreamingAudioTtsAdapter,
+    SttDriverProtocol,
+    TtsDriverProtocol,
+)
 from talent_screener.infrastructure.ai_adapters.langchain_parser import (
     DeterministicRuleBasedExtractorClient,
     DocumentSectionType,
@@ -16,6 +26,19 @@ from talent_screener.infrastructure.ai_adapters.langchain_parser import (
     StructuredExtractionRunnableProtocol,
     StructuredLlmExtractorClientProtocol,
 )
+from talent_screener.infrastructure.ai_adapters.langgraph_interview import (
+    AdaptiveEdgeRouter,
+    InMemoryFencedStateCheckpointer,
+    InterviewGraphPhase,
+    InterviewGraphState,
+    InterviewStateCheckpointerProtocol,
+    InterviewSynthesisModelProtocol,
+    LangGraphAdaptiveInterviewAdapter,
+    QuestionGenerationModelProtocol,
+    SlidingWindowTokenBudgetEnforcerAdapter,
+    SocraticProbeModelProtocol,
+    TurnEvaluationModelProtocol,
+)
 from talent_screener.infrastructure.ai_adapters.vector_store import (
     Bm25SparseEncoder,
     ChildChunk,
@@ -29,11 +52,15 @@ from talent_screener.infrastructure.ai_adapters.vector_store import (
 )
 
 __all__ = [
+    "AdaptiveEdgeRouter",
+    "AudioSignalStats",
     "Bm25SparseEncoder",
     "ChildChunk",
     "DenseEmbeddingClientProtocol",
     "DenseVectorMath",
     "DeterministicRuleBasedExtractorClient",
+    "DeterministicSttDriver",
+    "DeterministicTtsDriver",
     "DocumentSectionType",
     "DocumentTextNormalizer",
     "GroundingVerifier",
@@ -41,15 +68,30 @@ __all__ = [
     "HierarchicalChunkBundle",
     "HierarchicalDocumentChunker",
     "HybridVectorSearchAdapter",
+    "InMemoryFencedStateCheckpointer",
+    "InterviewGraphPhase",
+    "InterviewGraphState",
+    "InterviewStateCheckpointerProtocol",
+    "InterviewSynthesisModelProtocol",
     "LangChainDocumentParserAdapter",
+    "LangGraphAdaptiveInterviewAdapter",
     "NormalizedDocumentTree",
     "NormalizedSection",
     "ParentChunk",
+    "QuestionGenerationModelProtocol",
     "RawImpactMetricPayload",
     "RawProjectPayload",
     "RawSkillClaimPayload",
     "RawStructuredDossierPayload",
+    "RawTranscriptionResult",
     "RawWorkExperiencePayload",
+    "SlidingWindowTokenBudgetEnforcerAdapter",
+    "SocraticProbeModelProtocol",
+    "StreamingAudioSttAdapter",
+    "StreamingAudioTtsAdapter",
     "StructuredExtractionRunnableProtocol",
     "StructuredLlmExtractorClientProtocol",
+    "SttDriverProtocol",
+    "TtsDriverProtocol",
+    "TurnEvaluationModelProtocol",
 ]

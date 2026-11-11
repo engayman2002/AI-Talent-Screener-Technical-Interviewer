@@ -3,6 +3,7 @@
 ![Phase 1](https://img.shields.io/badge/Phase%201-Complete-brightgreen)
 ![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
 ![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
+![Phase 4](https://img.shields.io/badge/Phase%204-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![Typing](https://img.shields.io/badge/mypy--strict-passing-success)
@@ -17,8 +18,9 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 
 1. **Domain Layer (`backend/src/talent_screener/domain/`):** 100% pure Python Standard Library core owning Aggregate Roots, Entities, immutable Value Objects, Domain Services, Domain Events, and Repository Protocols across all **5 Bounded Contexts**.
 2. **Application Layer (`backend/src/talent_screener/application/`):** 100% pure Python Standard Library orchestration layer containing **22 Single-Responsibility Use Case Interactors**, segregated Inbound & Outbound `Protocol` Ports, immutable `@dataclass(frozen=True, slots=True)` Request/Response DTO boundaries, and cross-context Domain Event choreography handlers.
-3. **Phase 3 Infrastructure & Composition Root (`infrastructure/`, `composition_root/`):** Concrete Document Intelligence pipeline adapters wired via `build_phase3_container()` — malware/magic-byte virus scanner, zero-trust cryptographic PII vault (`ADR-008` with $O(1)$ GDPR crypto-shredding), tenant-scoped object storage, full-jitter retry & DLQ resilience, layout-aware PDF/DOCX/Text normalizer, anti-hallucination grounding verifier, LangChain structured extraction ACL, `ADR-004` Parent-Child hierarchical chunker, BM25 + dense vector encoders, and multi-tenant `HybridVectorSearchAdapter`.
-4. **Remaining Infrastructure & Presentation Layers (Upcoming Phases):** Stateful LangGraph Adaptive Interview Engine, PostgreSQL relational Data Mappers & Transactional Outbox, FastAPI REST/SSE, bi-directional WebSocket voice/text gateway, and Next.js frontend workspace.
+3. **Phase 3 Document Intelligence & Hybrid Vector Infrastructure (`infrastructure/`, `composition_root/`):** Concrete Document Intelligence pipeline adapters wired via `build_phase3_container()` — malware/magic-byte virus scanner, zero-trust cryptographic PII vault (`ADR-008` with $O(1)$ GDPR crypto-shredding), tenant-scoped object storage, full-jitter retry & DLQ resilience, layout-aware PDF/DOCX/Text normalizer, anti-hallucination grounding verifier, LangChain structured extraction ACL, `ADR-004` Parent-Child hierarchical chunker, BM25 + dense vector encoders, and multi-tenant `HybridVectorSearchAdapter`.
+4. **Phase 4 Stateful Adaptive Interview Engine & Security Guardrails (`infrastructure/ai_adapters/langgraph_interview/`, `composition_root/`):** Production `ADR-005` 4-Plane LangGraph execution engine wired via `build_phase4_container()` — tenant-isolated `ADR-009` fenced state checkpointer, XML-delimited cognitive nodes (`QuestionGeneratorNode`, `EvaluationNode`, `SocraticFollowUpNode`, `ScoringVerificationNode`), piecewise P1–P6 `AdaptiveEdgeRouter`, `ADR-012` adversarial prompt-injection firewall, `ADR-013` sliding-window FinOps token budget enforcer, monotonic fencing distributed lock, and streaming STT/TTS audio ACLs.
+5. **Remaining Infrastructure & Presentation Layers (Upcoming Phases):** PostgreSQL relational Data Mappers & Transactional Outbox, FastAPI REST/SSE, bi-directional WebSocket voice/text gateway, and Next.js frontend workspace.
 
 ### Core Bounded Contexts
 
@@ -41,7 +43,7 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Live Adaptive Interview** | `application/live_interview/` | `InitializeInterviewSessionUseCase`, `ProcessCandidateTurnUseCase`, `RecordClientTelemetryUseCase`, `TerminateInterviewEarlyUseCase`, `CompleteInterviewSessionUseCase`, `AudioSttPort`, `AudioTtsPort`, `PromptGuardrailPort`, `TokenBudgetEnforcerPort`, `AdaptiveInterviewGraphPort` |
 | **Evaluation & Analytics** | `application/evaluation_analytics/` | `GenerateEvaluationReportUseCase`, `RecordRecruiterOverrideUseCase`, `BuildCandidateComparisonMatrixUseCase`, `TriggerEvaluationReportOnInterviewCompletedHandler` |
 | **Identity & Governance** | `application/identity_governance/` | `ProvisionTenantAccountUseCase`, `RecordCandidateConsentUseCase`, `RevokeCandidateConsentUseCase`, `ExecuteCandidateErasureUseCase` |
-| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `build_phase3_container`, `build_phase3_external_adapters` |
+| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `Phase3PipelineBundle`, `Phase4PipelineBundle`, `build_phase3_container`, `build_phase4_container` |
 
 ### Phase 3 Document Intelligence, PII Vault & Hybrid Vector Adapters (`infrastructure/`)
 
@@ -52,6 +54,16 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Resilience & DLQ Messaging** | `infrastructure/messaging/` | `ExponentialBackoffRetryPolicy` ($T_{\text{sleep}}(k) = \text{Uniform}(0, \min(T_{\max}, T_{\text{base}} \cdot 2^k))$), `classify_failure`, `CircuitBreaker`, `ResilientTaskExecutor`, `InMemoryDeadLetterQueue` (`DeadLetterQueuePort`) |
 | **LangChain Extraction ACL** | `infrastructure/ai_adapters/langchain_parser/` | `DocumentTextNormalizer` (PDF `FlateDecode`/text, DOCX XML with DTD/XXE guard, NFKC + invisible char stripping), `GroundingVerifier` ($\tau_{\text{grounding}} = 0.85$ + chronological overlap), `LangChainDocumentParserAdapter`, `StructuredExtractionRunnableProtocol`, `DeterministicRuleBasedExtractorClient` |
 | **Hierarchical Chunking & Hybrid Search (`ADR-004`)** | `infrastructure/ai_adapters/vector_store/` | `HierarchicalDocumentChunker` (Parent sections + overlapping Child passages with deterministic `UUIDv5`), `Bm25SparseEncoder` ($k_1=1.5, b=0.75$), `DenseVectorMath`, `DenseEmbeddingClientProtocol`, `HashProjectionDenseEmbeddingClient`, `HybridVectorSearchAdapter` |
+
+### Phase 4 Stateful Adaptive Interview Engine, Security Guardrails & Audio ACLs (`infrastructure/`)
+
+| Subsystem | Package Path | Implemented Adapters, Nodes & Protocols |
+| :--- | :--- | :--- |
+| **4-Plane LangGraph State & Checkpointer (`ADR-005`, `ADR-009`)** | `infrastructure/ai_adapters/langgraph_interview/` | `SessionMetadataPlane`, `RubricContextPlane`, `AdaptiveRoutingPlane`, `DialogueLedgerPlane`, `InterviewGraphState`, idempotent `StateReducer` (bounded `recent_dialogue_window`), `InterviewStateCheckpointerProtocol`, `InMemoryFencedStateCheckpointer` |
+| **Cognitive Nodes & Routing Engine** | `infrastructure/ai_adapters/langgraph_interview/` | `QuestionGeneratorNode` (`PromptHash` dedup), `EvaluationNode` (`<untrusted_candidate_response>` XML boundary isolation & stylometric risk), `SocraticFollowUpNode`, `ScoringVerificationNode`, `AdaptiveEdgeRouter` (P1–P6 rules), `LangGraphAdaptiveInterviewAdapter` |
+| **Adversarial Prompt Guardrail (`ADR-012`)** | `infrastructure/security/prompt_guardrail.py` | `AdversarialPromptGuardrailAdapter` ($\mathcal{R}_{\text{adv}}$ risk bands, Unicode/NFKC & zero-width smuggling neutralization, Base64/Hex encoded attack decoding, delimiter & instruction-override blocking) |
+| **FinOps Token Budget & Fencing Lock (`ADR-013`)** | `infrastructure/ai_adapters/langgraph_interview/`, `infrastructure/messaging/` | `SlidingWindowTokenBudgetEnforcerAdapter` (session ceilings, sliding-window burst caps, micro-USD tracking), `FencingTokenDistributedLockAdapter` (monotonic epochs, TTL reclamation, stale-release isolation) |
+| **Audio Speech ACLs** | `infrastructure/ai_adapters/audio_adapters.py` | `StreamingAudioSttAdapter`, `StreamingAudioTtsAdapter`, `SttDriverProtocol`, `TtsDriverProtocol`, silence/RMS energy validation & `[0.0, 600.0]` WPM clamping |
 
 ---
 
@@ -72,8 +84,12 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - Layout-aware PDF/DOCX/Text `DocumentTextNormalizer`, anti-hallucination `GroundingVerifier`, and PII-free `LangChainDocumentParserAdapter`
   - `ADR-004` Parent-Child `HierarchicalDocumentChunker` (deterministic `UUIDv5`), `Bm25SparseEncoder` + dense cosine `HybridVectorSearchAdapter` with strict `tenant_id` isolation & GDPR purge
   - Full-jitter exponential backoff (`ExponentialBackoffRetryPolicy`), `CircuitBreaker`, `InMemoryDeadLetterQueue`, and end-to-end integration pipeline wired via `build_phase3_container()`
-- [ ] **Phase 4:** LangGraph Stateful Adaptive Interview Engine, Guardrails & PostgreSQL Persistence Adapters
-- [ ] **Phase 5:** FastAPI REST, SSE Batch Telemetry & Full-Duplex WebSocket Voice/Text Gateway
+- [x] **Phase 4: Stateful Adaptive Interview Engine, Cognitive Nodes, Guardrails & Fenced Checkpointing** — **Complete**
+  - `ADR-005` 4-Plane `InterviewGraphState` with bounded idempotent `StateReducer` and `ADR-009` tenant-isolated `InMemoryFencedStateCheckpointer`
+  - Cognitive nodes (`QuestionGeneratorNode`, `EvaluationNode`, `SocraticFollowUpNode`, `ScoringVerificationNode`) behind injectable model Protocols and `<untrusted_candidate_response>` XML boundary isolation
+  - `AdversarialPromptGuardrailAdapter`, `SlidingWindowTokenBudgetEnforcerAdapter`, `FencingTokenDistributedLockAdapter`, and `StreamingAudioSttAdapter` / `StreamingAudioTtsAdapter`
+  - End-to-end adaptive interview Scenarios A/B/C (mastery escalation, Socratic $N_{\text{probe}} \le 2$ enforcement, telemetry + injection high-risk alert & automatic `EvaluationReport` synthesis) wired via `build_phase4_container()`
+- [ ] **Phase 5:** FastAPI REST, SSE Batch Telemetry, PostgreSQL Adapters & Full-Duplex WebSocket Voice/Text Gateway
 - [ ] **Phase 6:** Next.js App Router Frontend Workspace & Live Interview Portal
 
 ---

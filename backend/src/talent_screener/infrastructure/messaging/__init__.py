@@ -1,5 +1,9 @@
 """Messaging, Resilience & Domain Event Bus infrastructure exports."""
 
+from talent_screener.infrastructure.messaging.distributed_lock import (
+    FencingTokenDistributedLockAdapter,
+    LockLeaseEntry,
+)
 from talent_screener.infrastructure.messaging.in_memory_adapters import (
     InMemoryRealtimeProgressPublisher,
     InMemoryTaskQueueDispatcher,
@@ -23,10 +27,12 @@ __all__ = [
     "CircuitState",
     "DeadLetterRecord",
     "ExponentialBackoffRetryPolicy",
+    "FencingTokenDistributedLockAdapter",
     "InMemoryDeadLetterQueue",
     "InMemoryDomainEventBus",
     "InMemoryRealtimeProgressPublisher",
     "InMemoryTaskQueueDispatcher",
+    "LockLeaseEntry",
     "ResilientTaskExecutor",
     "TaskExecutionOutcome",
     "classify_failure",
