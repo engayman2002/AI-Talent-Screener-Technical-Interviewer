@@ -88,6 +88,7 @@ include_external_packages = true
 name = "Clean Architecture Inward Dependency Rule"
 type = "layers"
 layers = [
+    "talent_screener.composition_root",
     "talent_screener.presentation",
     "talent_screener.infrastructure",
     "talent_screener.application",
@@ -95,15 +96,16 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Domain Zero-Framework Purity"
+name = "Domain and Application Zero-Framework Purity"
 type = "forbidden"
 source_modules = [
     "talent_screener.domain",
+    "talent_screener.application",
 ]
 forbidden_modules = [
-    "talent_screener.application",
     "talent_screener.infrastructure",
     "talent_screener.presentation",
+    "talent_screener.composition_root",
     "pydantic",
     "fastapi",
     "sqlalchemy",
@@ -112,6 +114,17 @@ forbidden_modules = [
     "celery",
     "redis",
     "qdrant_client",
+    "httpx",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain Cannot Depend On Application"
+type = "forbidden"
+source_modules = [
+    "talent_screener.domain",
+]
+forbidden_modules = [
+    "talent_screener.application",
 ]
 
 [[tool.importlinter.contracts]]
