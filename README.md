@@ -2,6 +2,7 @@
 
 ![Phase 1](https://img.shields.io/badge/Phase%201-Complete-brightgreen)
 ![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
+![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![Typing](https://img.shields.io/badge/mypy--strict-passing-success)
@@ -16,8 +17,8 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 
 1. **Domain Layer (`backend/src/talent_screener/domain/`):** 100% pure Python Standard Library core owning Aggregate Roots, Entities, immutable Value Objects, Domain Services, Domain Events, and Repository Protocols across all **5 Bounded Contexts**.
 2. **Application Layer (`backend/src/talent_screener/application/`):** 100% pure Python Standard Library orchestration layer containing **22 Single-Responsibility Use Case Interactors**, segregated Inbound & Outbound `Protocol` Ports, immutable `@dataclass(frozen=True, slots=True)` Request/Response DTO boundaries, and cross-context Domain Event choreography handlers.
-3. **Composition Root & In-Memory Adapters (`backend/src/talent_screener/composition_root/`, `infrastructure/`):** Pure Manual Dependency Injection (`ApplicationContainer`), `InMemoryDomainEventBus`, and tenant-scoped `InMemoryUnitOfWork` / repository implementations for fast deterministic testing.
-4. **External Infrastructure & Presentation Layers (Upcoming Phases):** Concrete `LangChain` / `LangGraph` Anti-Corruption Layers (ACLs), PostgreSQL + PII Vault crypto-shredding persistence, hybrid vector search, FastAPI REST/SSE, and bi-directional WebSocket voice/text gateways.
+3. **Phase 3 Infrastructure & Composition Root (`infrastructure/`, `composition_root/`):** Concrete Document Intelligence pipeline adapters wired via `build_phase3_container()` — malware/magic-byte virus scanner, zero-trust cryptographic PII vault (`ADR-008` with $O(1)$ GDPR crypto-shredding), tenant-scoped object storage, full-jitter retry & DLQ resilience, layout-aware PDF/DOCX/Text normalizer, anti-hallucination grounding verifier, LangChain structured extraction ACL, `ADR-004` Parent-Child hierarchical chunker, BM25 + dense vector encoders, and multi-tenant `HybridVectorSearchAdapter`.
+4. **Remaining Infrastructure & Presentation Layers (Upcoming Phases):** Stateful LangGraph Adaptive Interview Engine, PostgreSQL relational Data Mappers & Transactional Outbox, FastAPI REST/SSE, bi-directional WebSocket voice/text gateway, and Next.js frontend workspace.
 
 ### Core Bounded Contexts
 
@@ -40,7 +41,17 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Live Adaptive Interview** | `application/live_interview/` | `InitializeInterviewSessionUseCase`, `ProcessCandidateTurnUseCase`, `RecordClientTelemetryUseCase`, `TerminateInterviewEarlyUseCase`, `CompleteInterviewSessionUseCase`, `AudioSttPort`, `AudioTtsPort`, `PromptGuardrailPort`, `TokenBudgetEnforcerPort`, `AdaptiveInterviewGraphPort` |
 | **Evaluation & Analytics** | `application/evaluation_analytics/` | `GenerateEvaluationReportUseCase`, `RecordRecruiterOverrideUseCase`, `BuildCandidateComparisonMatrixUseCase`, `TriggerEvaluationReportOnInterviewCompletedHandler` |
 | **Identity & Governance** | `application/identity_governance/` | `ProvisionTenantAccountUseCase`, `RecordCandidateConsentUseCase`, `RevokeCandidateConsentUseCase`, `ExecuteCandidateErasureUseCase` |
-| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort` |
+| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `build_phase3_container`, `build_phase3_external_adapters` |
+
+### Phase 3 Document Intelligence, PII Vault & Hybrid Vector Adapters (`infrastructure/`)
+
+| Subsystem | Package Path | Implemented Adapters, ACLs & Protocols |
+| :--- | :--- | :--- |
+| **Security & PII Vault (`ADR-008`)** | `infrastructure/security/` | `SignatureAndHeuristicVirusScannerAdapter` (PDF/DOCX/UTF-8 magic bytes, EICAR, VBA macro, Zip Slip/bomb guards), `CryptographicPiiVaultAdapter`, `StdlibHmacCtrEnvelopeCipher`, `EnvelopeCipherProtocol` ($O(1)$ `crypto_shred`) |
+| **Object Storage & Vector Backend** | `infrastructure/persistence/` | `TenantScopedObjectStorageAdapter` (`{tenant_id}/{batch_id}/{sha256}`, signed presigned URLs), `InMemoryHybridVectorStoreBackend`, `VectorStoreBackendProtocol`, `InMemoryIdempotencyStore`, `InMemoryDistributedLock` |
+| **Resilience & DLQ Messaging** | `infrastructure/messaging/` | `ExponentialBackoffRetryPolicy` ($T_{\text{sleep}}(k) = \text{Uniform}(0, \min(T_{\max}, T_{\text{base}} \cdot 2^k))$), `classify_failure`, `CircuitBreaker`, `ResilientTaskExecutor`, `InMemoryDeadLetterQueue` (`DeadLetterQueuePort`) |
+| **LangChain Extraction ACL** | `infrastructure/ai_adapters/langchain_parser/` | `DocumentTextNormalizer` (PDF `FlateDecode`/text, DOCX XML with DTD/XXE guard, NFKC + invisible char stripping), `GroundingVerifier` ($\tau_{\text{grounding}} = 0.85$ + chronological overlap), `LangChainDocumentParserAdapter`, `StructuredExtractionRunnableProtocol`, `DeterministicRuleBasedExtractorClient` |
+| **Hierarchical Chunking & Hybrid Search (`ADR-004`)** | `infrastructure/ai_adapters/vector_store/` | `HierarchicalDocumentChunker` (Parent sections + overlapping Child passages with deterministic `UUIDv5`), `Bm25SparseEncoder` ($k_1=1.5, b=0.75$), `DenseVectorMath`, `DenseEmbeddingClientProtocol`, `HashProjectionDenseEmbeddingClient`, `HybridVectorSearchAdapter` |
 
 ---
 
@@ -56,8 +67,12 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - Cross-context event choreography (`LockRubricOnBatchOrInterviewStartedHandler`, `TriggerEvaluationReportOnInterviewCompletedHandler`) via `InMemoryDomainEventBus`
   - Pure manual Dependency Injection in `ApplicationContainer` (`composition_root/`) and tenant-scoped `InMemoryUnitOfWork`
   - SOLID fitness & Robert C. Martin Coupling Metrics ($C_a, C_e, I, A, D$) verification (`test_solid_and_coupling_metrics.py`) alongside `import-linter` (4/4 contracts kept)
-- [ ] **Phase 3:** Persistence Adapters, PostgreSQL Data Mappers, Cryptographic PII Vault & Transactional Outbox
-- [ ] **Phase 4:** LangChain Extraction & Hybrid Vector Search Adapters + LangGraph Adaptive Interview Graph
+- [x] **Phase 3: Document Intelligence, Anti-Hallucination ACL, Cryptographic PII Vault & Hybrid Vector Search** — **Complete**
+  - Malware/magic-byte quarantine (`SignatureAndHeuristicVirusScannerAdapter`), tenant-scoped `TenantScopedObjectStorageAdapter`, and envelope-encrypted `CryptographicPiiVaultAdapter` with $O(1)$ `crypto_shred()`
+  - Layout-aware PDF/DOCX/Text `DocumentTextNormalizer`, anti-hallucination `GroundingVerifier`, and PII-free `LangChainDocumentParserAdapter`
+  - `ADR-004` Parent-Child `HierarchicalDocumentChunker` (deterministic `UUIDv5`), `Bm25SparseEncoder` + dense cosine `HybridVectorSearchAdapter` with strict `tenant_id` isolation & GDPR purge
+  - Full-jitter exponential backoff (`ExponentialBackoffRetryPolicy`), `CircuitBreaker`, `InMemoryDeadLetterQueue`, and end-to-end integration pipeline wired via `build_phase3_container()`
+- [ ] **Phase 4:** LangGraph Stateful Adaptive Interview Engine, Guardrails & PostgreSQL Persistence Adapters
 - [ ] **Phase 5:** FastAPI REST, SSE Batch Telemetry & Full-Duplex WebSocket Voice/Text Gateway
 - [ ] **Phase 6:** Next.js App Router Frontend Workspace & Live Interview Portal
 
