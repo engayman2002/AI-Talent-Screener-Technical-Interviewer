@@ -2,6 +2,8 @@
 
 from talent_screener.application.common.dtos import (
     CryptoShredReceiptDTO,
+    DeadLetterRecordDTO,
+    FailureClassification,
     FencingLeaseDTO,
     IdempotencyRecordDTO,
     IdempotencyStatus,
@@ -25,7 +27,9 @@ from talent_screener.application.common.exceptions import (
 __all__ = [
     "ApplicationError",
     "CryptoShredReceiptDTO",
+    "DeadLetterRecordDTO",
     "ExternalAdapterFailureError",
+    "FailureClassification",
     "FencingLeaseDTO",
     "GuardrailViolationError",
     "IdempotencyConflictError",

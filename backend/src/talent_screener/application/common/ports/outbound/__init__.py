@@ -1,5 +1,8 @@
 """Common outbound driving/driven ports."""
 
+from talent_screener.application.common.ports.outbound.dead_letter_queue import (
+    DeadLetterQueuePort,
+)
 from talent_screener.application.common.ports.outbound.distributed_lock import (
     DistributedLockPort,
 )
@@ -32,6 +35,7 @@ from talent_screener.application.common.ports.outbound.virus_scanner import (
 )
 
 __all__ = [
+    "DeadLetterQueuePort",
     "DistributedLockPort",
     "DomainEventBusPort",
     "DomainEventHandlerPort",

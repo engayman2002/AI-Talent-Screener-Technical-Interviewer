@@ -9,7 +9,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from talent_screener.domain.contexts.document_intelligence.value_objects import PiiRedactionMap
-from talent_screener.domain.shared.uuid7 import utc_now
+from talent_screener.domain.shared.uuid7 import generate_uuid7, utc_now
 from talent_screener.domain.shared.value_objects import SHA256Hash, TenantId
 
 
@@ -18,6 +18,13 @@ class IdempotencyStatus(StrEnum):
 
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
+
+
+class FailureClassification(StrEnum):
+    """Deterministic fault taxonomy separating retryable transient faults from permanent errors."""
+
+    TRANSIENT = "TRANSIENT"
+    PERMANENT = "PERMANENT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,3 +114,19 @@ class TokenUsageRecordDTO:
     input_tokens: int
     output_tokens: int
     cost_micro_usd: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeadLetterRecordDTO:
+    """Immutable failed-task envelope routed to DeadLetterQueuePort."""
+
+    tenant_id: TenantId
+    task_name: str
+    correlation_id: str
+    payload: Mapping[str, object]
+    error_code: str
+    error_message: str
+    attempt_count: int
+    classification: FailureClassification
+    record_id: UUID = field(default_factory=generate_uuid7, kw_only=True)
+    failed_at: datetime = field(default_factory=utc_now, kw_only=True)

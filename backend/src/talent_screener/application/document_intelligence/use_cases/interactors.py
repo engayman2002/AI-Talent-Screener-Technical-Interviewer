@@ -8,6 +8,7 @@ from talent_screener.application.common.dtos import (
     TaskDispatchDTO,
 )
 from talent_screener.application.common.exceptions import (
+    ExternalAdapterFailureError,
     IdempotencyConflictError,
     QuotaExceededError,
     ResourceConflictError,
@@ -66,7 +67,7 @@ from talent_screener.domain.contexts.recruitment import (
     JobRequisitionRepositoryPort,
     RequisitionStatus,
 )
-from talent_screener.domain.shared.exceptions import InvariantViolationError
+from talent_screener.domain.shared.exceptions import DomainError, InvariantViolationError
 from talent_screener.domain.shared.value_objects import SHA256Hash
 
 
@@ -349,77 +350,106 @@ class ProcessDocumentIngestionTaskUseCase:
                 )
 
             batch.begin_task_stage(task.id, TaskIngestionStatus.PARSING)
-            dossier = await self._document_parser.parse_and_extract(
-                DocumentExtractionCommandDTO(
+            try:
+                dossier = await self._document_parser.parse_and_extract(
+                    DocumentExtractionCommandDTO(
+                        tenant_id=request.tenant_id,
+                        batch_id=batch.id,
+                        batch_file_id=task.id,
+                        document_stream_uri=request.object_key,
+                        mime_type=task.file_hash.mime_type,
+                        expected_sha256=task.file_hash.sha256,
+                        skill_taxonomy_version=request.skill_taxonomy_version,
+                    )
+                )
+
+                batch.begin_task_stage(task.id, TaskIngestionStatus.REDACTING)
+                vault_outcome = await self._pii_vault.tokenize_and_vault(
                     tenant_id=request.tenant_id,
-                    batch_id=batch.id,
-                    batch_file_id=task.id,
-                    document_stream_uri=request.object_key,
-                    mime_type=task.file_hash.mime_type,
-                    expected_sha256=task.file_hash.sha256,
-                    skill_taxonomy_version=request.skill_taxonomy_version,
+                    candidate_profile_id=dossier.anonymized_candidate_token,
+                    raw_text=dossier.raw_redacted_text,
                 )
-            )
-
-            batch.begin_task_stage(task.id, TaskIngestionStatus.REDACTING)
-            vault_outcome = await self._pii_vault.tokenize_and_vault(
-                tenant_id=request.tenant_id,
-                candidate_profile_id=dossier.anonymized_candidate_token,
-                raw_text=dossier.raw_redacted_text,
-            )
-            merged_tokens = dict(dossier.pii_redaction_map.as_mapping())
-            merged_tokens.update(vault_outcome.pii_redaction_map.as_mapping())
-            redaction_map = PiiRedactionMap.from_mapping(
-                vault_reference_id=vault_outcome.vault_reference_id,
-                token_categories=merged_tokens,
-            )
-
-            batch.begin_task_stage(task.id, TaskIngestionStatus.EXTRACTING)
-            work_entries = [
-                WorkExperienceEntry(
-                    role_title=we.role_title,
-                    normalized_role=we.normalized_role,
-                    company_token=we.company_token,
-                    start_year=we.start_year,
-                    start_month=we.start_month,
-                    end_year=we.end_year,
-                    end_month=we.end_month,
-                    is_current=we.is_current,
-                    employment_type=we.employment_type,
+                merged_tokens = dict(dossier.pii_redaction_map.as_mapping())
+                merged_tokens.update(vault_outcome.pii_redaction_map.as_mapping())
+                redaction_map = PiiRedactionMap.from_mapping(
+                    vault_reference_id=vault_outcome.vault_reference_id,
+                    token_categories=merged_tokens,
                 )
-                for we in dossier.work_experiences
-            ]
-            project_records = [
-                ProjectComplexityRecord(
-                    project_name=proj.project_name,
-                    scale_tier=proj.scale_tier,
-                    summary=proj.summary,
-                    source_quote=proj.source_quote,
-                    impact_metrics=proj.impact_metrics,
-                )
-                for proj in dossier.projects
-            ]
-            profile = CandidateProfile(
-                tenant_id=request.tenant_id,
-                anonymized_token=dossier.anonymized_candidate_token,
-                file_hash=task.file_hash,
-                pii_redaction_map=redaction_map,
-                work_experiences=work_entries,
-                projects=project_records,
-                skill_claims=dossier.skill_claims,
-                seniority_estimate=dossier.seniority_estimate,
-                source_document_text=vault_outcome.anonymized_text,
-                profile_id=dossier.anonymized_candidate_token,
-            )
 
-            batch.begin_task_stage(task.id, TaskIngestionStatus.INDEXING)
-            await self._vector_search.index_candidate_dossier(
-                tenant_id=request.tenant_id,
-                requisition_id=batch.requisition_id,
-                candidate_profile_id=profile.id,
-                dossier=dossier,
-                sync_version=int(profile.version),
-            )
+                batch.begin_task_stage(task.id, TaskIngestionStatus.EXTRACTING)
+                work_entries = [
+                    WorkExperienceEntry(
+                        role_title=we.role_title,
+                        normalized_role=we.normalized_role,
+                        company_token=we.company_token,
+                        start_year=we.start_year,
+                        start_month=we.start_month,
+                        end_year=we.end_year,
+                        end_month=we.end_month,
+                        is_current=we.is_current,
+                        employment_type=we.employment_type,
+                    )
+                    for we in dossier.work_experiences
+                ]
+                project_records = [
+                    ProjectComplexityRecord(
+                        project_name=proj.project_name,
+                        scale_tier=proj.scale_tier,
+                        summary=proj.summary,
+                        source_quote=proj.source_quote,
+                        impact_metrics=proj.impact_metrics,
+                    )
+                    for proj in dossier.projects
+                ]
+                profile = CandidateProfile(
+                    tenant_id=request.tenant_id,
+                    anonymized_token=dossier.anonymized_candidate_token,
+                    file_hash=task.file_hash,
+                    pii_redaction_map=redaction_map,
+                    work_experiences=work_entries,
+                    projects=project_records,
+                    skill_claims=dossier.skill_claims,
+                    seniority_estimate=dossier.seniority_estimate,
+                    source_document_text=vault_outcome.anonymized_text,
+                    profile_id=dossier.anonymized_candidate_token,
+                )
+
+                batch.begin_task_stage(task.id, TaskIngestionStatus.INDEXING)
+                await self._vector_search.index_candidate_dossier(
+                    tenant_id=request.tenant_id,
+                    requisition_id=batch.requisition_id,
+                    candidate_profile_id=profile.id,
+                    dossier=dossier,
+                    sync_version=int(profile.version),
+                )
+            except (ExternalAdapterFailureError, DomainError) as exc:
+                if isinstance(exc, ExternalAdapterFailureError) and exc.retryable:
+                    raise
+                err_code = exc.code[:64]
+                async with self._uow:
+                    await self._uow.begin(request.tenant_id)
+                    batch.mark_task_failed(
+                        task.id,
+                        error_code=err_code,
+                        error_message=str(exc)[:500],
+                        quarantined=False,
+                    )
+                    self._batch_repo.save(batch)
+                    self._uow.register_aggregate(batch)
+                    await self._uow.commit()
+                await self._progress_publisher.publish_progress(
+                    RealtimeProgressEventDTO(
+                        tenant_id=request.tenant_id,
+                        channel=f"batch:{batch.id}",
+                        event_type="TASK_FAILED",
+                        payload={
+                            "task_id": str(task.id),
+                            "error_code": err_code,
+                            "batch_status": batch.status.value,
+                        },
+                    )
+                )
+                raise
 
             async with self._uow:
                 await self._uow.begin(request.tenant_id)
