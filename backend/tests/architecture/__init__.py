@@ -1,0 +1,1 @@
+"""Architecture fitness tests package."""
