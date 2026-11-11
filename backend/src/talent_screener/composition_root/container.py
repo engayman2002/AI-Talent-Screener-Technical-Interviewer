@@ -84,17 +84,49 @@ from talent_screener.domain.contexts.live_interview import (
     InterviewSessionStartedEvent,
 )
 from talent_screener.domain.contexts.recruitment import JobRequisitionRepositoryPort
-from talent_screener.infrastructure.messaging import InMemoryDomainEventBus
+from talent_screener.infrastructure.ai_adapters.interview_defaults import (
+    InMemoryTokenBudgetEnforcerAdapter,
+    StubAdaptiveInterviewGraphAdapter,
+    StubAudioSttAdapter,
+    StubAudioTtsAdapter,
+    StubPromptGuardrailAdapter,
+)
+from talent_screener.infrastructure.ai_adapters.langchain_parser import (
+    LangChainDocumentParserAdapter,
+    StructuredExtractionRunnableProtocol,
+)
+from talent_screener.infrastructure.ai_adapters.vector_store import (
+    DenseEmbeddingClientProtocol,
+    HybridVectorSearchAdapter,
+)
+from talent_screener.infrastructure.messaging import (
+    InMemoryDeadLetterQueue,
+    InMemoryDomainEventBus,
+    InMemoryRealtimeProgressPublisher,
+    InMemoryTaskQueueDispatcher,
+    ResilientTaskExecutor,
+)
+from talent_screener.infrastructure.observability import InMemoryObservabilityTracer
 from talent_screener.infrastructure.persistence import (
     InMemoryCandidateProfileRepository,
     InMemoryConsentRecordRepository,
+    InMemoryDistributedLock,
     InMemoryEvaluationReportRepository,
+    InMemoryHybridVectorStoreBackend,
+    InMemoryIdempotencyStore,
     InMemoryInterviewSessionRepository,
     InMemoryJobRequisitionRepository,
     InMemoryScreeningBatchRepository,
     InMemorySemanticMatchResultRepository,
     InMemoryTenantAccountRepository,
     InMemoryUnitOfWork,
+    TenantScopedObjectStorageAdapter,
+    VectorStoreBackendProtocol,
+)
+from talent_screener.infrastructure.security import (
+    CryptographicPiiVaultAdapter,
+    EnvelopeCipherProtocol,
+    SignatureAndHeuristicVirusScannerAdapter,
 )
 
 
@@ -144,6 +176,92 @@ def build_in_memory_repositories() -> RepositoryRegistry:
         report_repo=InMemoryEvaluationReportRepository(),
         tenant_repo=InMemoryTenantAccountRepository(),
         consent_repo=InMemoryConsentRecordRepository(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Phase3PipelineBundle:
+    """Bundled DI container plus Phase 3 concrete adapters and DLQ executor."""
+
+    container: ApplicationContainer
+    adapters: ExternalAdapterRegistry
+    dlq: InMemoryDeadLetterQueue
+    resilient_executor: ResilientTaskExecutor
+
+
+def build_phase3_external_adapters(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+) -> ExternalAdapterRegistry:
+    """Wire all concrete Phase 3 Document Intelligence, Security & Vector Search adapters."""
+    object_storage = TenantScopedObjectStorageAdapter()
+    virus_scanner = SignatureAndHeuristicVirusScannerAdapter()
+    pii_vault = CryptographicPiiVaultAdapter(cipher=cipher, master_kek=master_kek)
+    tracer = InMemoryObservabilityTracer()
+    document_parser = LangChainDocumentParserAdapter(
+        object_storage=object_storage,
+        pii_vault=pii_vault,
+        llm_client=llm_client,
+        tracer=tracer,
+        grounding_threshold=grounding_threshold,
+    )
+    resolved_backend: VectorStoreBackendProtocol = (
+        vector_backend if vector_backend is not None else InMemoryHybridVectorStoreBackend()
+    )
+    hybrid_vector_search = HybridVectorSearchAdapter(
+        backend=resolved_backend,
+        embedding_client=embedding_client,
+    )
+    return ExternalAdapterRegistry(
+        idempotency_store=InMemoryIdempotencyStore(),
+        distributed_lock=InMemoryDistributedLock(),
+        object_storage=object_storage,
+        virus_scanner=virus_scanner,
+        pii_vault=pii_vault,
+        task_dispatcher=InMemoryTaskQueueDispatcher(),
+        progress_publisher=InMemoryRealtimeProgressPublisher(),
+        observability_tracer=tracer,
+        document_parser=document_parser,
+        hybrid_vector_search=hybrid_vector_search,
+        adaptive_interview_graph=StubAdaptiveInterviewGraphAdapter(),
+        audio_stt=StubAudioSttAdapter(),
+        audio_tts=StubAudioTtsAdapter(),
+        prompt_guardrail=StubPromptGuardrailAdapter(),
+        token_budget_enforcer=InMemoryTokenBudgetEnforcerAdapter(),
+    )
+
+
+def build_phase3_container(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+) -> Phase3PipelineBundle:
+    """Assemble a full ApplicationContainer wired with real Phase 3 adapters and DLQ resilience."""
+    adapters = build_phase3_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=vector_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+    )
+    container = ApplicationContainer(adapters=adapters)
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+    return Phase3PipelineBundle(
+        container=container,
+        adapters=adapters,
+        dlq=dlq,
+        resilient_executor=executor,
     )
 
 
@@ -315,6 +433,10 @@ class ApplicationContainer:
     @property
     def repositories(self) -> RepositoryRegistry:
         return self._repos
+
+    @property
+    def adapters(self) -> ExternalAdapterRegistry:
+        return self._adapters
 
     def wire_event_handlers(self, event_bus: DomainEventBusPort) -> None:
         """Bind cross-context Domain Event Handlers onto the event bus."""

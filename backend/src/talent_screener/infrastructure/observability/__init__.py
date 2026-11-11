@@ -1,3 +1,7 @@
-"""OpenTelemetry observability and FinOps adapters placeholder (Phase 8)."""
+"""Observability and FinOps telemetry adapter exports."""
 
-__all__: list[str] = []
+from talent_screener.infrastructure.observability.in_memory_tracer import (
+    InMemoryObservabilityTracer,
+)
+
+__all__ = ["InMemoryObservabilityTracer"]

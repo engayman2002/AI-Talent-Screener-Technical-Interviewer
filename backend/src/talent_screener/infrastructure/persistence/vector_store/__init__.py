@@ -1,3 +1,15 @@
-"""Vector store adapters placeholder (Phase 3/4)."""
+"""Vector Store persistence backend exports."""
 
-__all__: list[str] = []
+from talent_screener.infrastructure.persistence.vector_store.in_memory_backend import (
+    ChildVectorPoint,
+    InMemoryHybridVectorStoreBackend,
+    ParentChunkPayload,
+    VectorStoreBackendProtocol,
+)
+
+__all__ = [
+    "ChildVectorPoint",
+    "InMemoryHybridVectorStoreBackend",
+    "ParentChunkPayload",
+    "VectorStoreBackendProtocol",
+]

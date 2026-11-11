@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from datetime import timedelta
 from types import TracebackType
 from typing import Any, Self
 from uuid import UUID
 
+from talent_screener.application.common.dtos import (
+    FencingLeaseDTO,
+    IdempotencyRecordDTO,
+    IdempotencyStatus,
+)
+from talent_screener.application.common.exceptions import IdempotencyConflictError
 from talent_screener.application.common.ports.outbound import DomainEventBusPort
 from talent_screener.domain.contexts.document_intelligence import (
     CandidateProfile,
@@ -23,6 +31,7 @@ from talent_screener.domain.contexts.recruitment import (
     RequisitionStatus,
 )
 from talent_screener.domain.shared.base import AggregateRoot, DomainEvent
+from talent_screener.domain.shared.uuid7 import generate_uuid7, utc_now
 from talent_screener.domain.shared.value_objects import TenantId
 
 
@@ -262,3 +271,97 @@ class InMemoryConsentRecordRepository:
             if tid == tenant_id.value and rec.candidate_id == candidate_id:
                 return rec
         return None
+
+
+class InMemoryIdempotencyStore:
+    """Tenant-isolated IdempotencyStorePort supporting atomic reservation and replay."""
+
+    def __init__(self) -> None:
+        self._records: dict[tuple[UUID, str, str], IdempotencyRecordDTO] = {}
+
+    async def check_and_reserve(
+        self,
+        *,
+        tenant_id: TenantId,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> IdempotencyRecordDTO | None:
+        key = (tenant_id.value, operation, idempotency_key)
+        existing = self._records.get(key)
+        if existing is not None:
+            if existing.payload_hash != payload_hash:
+                raise IdempotencyConflictError(
+                    "Idempotency key reused with mismatched request payload.",
+                )
+            return existing
+        self._records[key] = IdempotencyRecordDTO(
+            tenant_id=tenant_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload_hash=payload_hash,
+            status=IdempotencyStatus.IN_PROGRESS,
+        )
+        return None
+
+    async def mark_completed(
+        self,
+        *,
+        tenant_id: TenantId,
+        operation: str,
+        idempotency_key: str,
+        resource_id: UUID,
+        serialized_result: Mapping[str, object] | None = None,
+    ) -> None:
+        key = (tenant_id.value, operation, idempotency_key)
+        existing = self._records[key]
+        self._records[key] = IdempotencyRecordDTO(
+            tenant_id=tenant_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload_hash=existing.payload_hash,
+            status=IdempotencyStatus.COMPLETED,
+            resource_id=resource_id,
+            serialized_result=serialized_result,
+        )
+
+    async def release_reservation(
+        self,
+        *,
+        tenant_id: TenantId,
+        operation: str,
+        idempotency_key: str,
+    ) -> None:
+        key = (tenant_id.value, operation, idempotency_key)
+        rec = self._records.get(key)
+        if rec is not None and rec.status is IdempotencyStatus.IN_PROGRESS:
+            del self._records[key]
+
+
+class InMemoryDistributedLock:
+    """In-memory DistributedLockPort issuing monotonic split-brain fencing tokens."""
+
+    def __init__(self) -> None:
+        self._epoch: int = 0
+        self._active_leases: set[UUID] = set()
+
+    async def acquire(
+        self,
+        *,
+        tenant_id: TenantId,
+        resource_key: str,
+        ttl_seconds: int = 30,
+    ) -> FencingLeaseDTO:
+        self._epoch += 1
+        lease_id = generate_uuid7()
+        self._active_leases.add(lease_id)
+        return FencingLeaseDTO(
+            tenant_id=tenant_id,
+            resource_key=resource_key,
+            fencing_token=self._epoch,
+            lease_id=lease_id,
+            expires_at=utc_now() + timedelta(seconds=ttl_seconds),
+        )
+
+    async def release(self, *, lease: FencingLeaseDTO) -> None:
+        self._active_leases.discard(lease.lease_id)

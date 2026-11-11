@@ -27,6 +27,7 @@ pythonpath = ["src"]
 addopts = "-ra -q --strict-markers --cov=talent_screener --cov-report=term-missing"
 markers = [
     "architecture: Architectural fitness and Clean Architecture boundary tests",
+    "integration: End-to-end integration tests across application and infrastructure adapters",
     "unit: Pure domain and port unit tests",
 ]
 

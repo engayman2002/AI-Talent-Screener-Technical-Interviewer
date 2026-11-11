@@ -359,7 +359,8 @@ def test_robert_c_martin_coupling_metrics_and_main_sequence() -> None:
         assert m.instability >= 0.75
         assert m.distance_from_main_sequence <= 0.25
 
-    # 4. Infrastructure adapters are concrete (A = 0.0) and replaceable
+    # 4. Infrastructure adapters are predominantly concrete (thin driver Protocols <= 0.20)
+    # and highly replaceable (I >= 0.65), keeping Phase 3 modules cleanly on the Main Sequence.
     infra_pkgs = [
         m
         for name, m in metrics.items()
@@ -367,9 +368,18 @@ def test_robert_c_martin_coupling_metrics_and_main_sequence() -> None:
     ]
     assert infra_pkgs
     for m in infra_pkgs:
-        assert m.abstractness == 0.0
+        assert m.abstractness <= 0.20, f"{m.package} too abstract: A={m.abstractness:.3f}"
         assert m.instability >= 0.65, f"{m.package} instability too low: I={m.instability:.3f}"
-    assert metrics["talent_screener.infrastructure.persistence"].distance_from_main_sequence <= 0.15
+    for core_infra in (
+        "talent_screener.infrastructure.ai_adapters",
+        "talent_screener.infrastructure.messaging",
+        "talent_screener.infrastructure.persistence",
+        "talent_screener.infrastructure.security",
+    ):
+        assert metrics[core_infra].distance_from_main_sequence <= 0.15, (
+            f"{core_infra} breached Main Sequence D <= 0.15: "
+            f"D={metrics[core_infra].distance_from_main_sequence:.3f}"
+        )
 
     # 5. Composition Root is outermost consumer (Ca = 0 => I = 1.0)
     comp_root = metrics["talent_screener.composition_root"]

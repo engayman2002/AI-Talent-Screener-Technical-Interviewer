@@ -1,3 +1,55 @@
-"""LangChain and LangGraph AI adapters placeholder (Phase 4)."""
+"""AI Adapter Anti-Corruption Layer exports (Phase 3 Document Intelligence & Vector Store)."""
 
-__all__: list[str] = []
+from talent_screener.infrastructure.ai_adapters.langchain_parser import (
+    DeterministicRuleBasedExtractorClient,
+    DocumentSectionType,
+    DocumentTextNormalizer,
+    GroundingVerifier,
+    LangChainDocumentParserAdapter,
+    NormalizedDocumentTree,
+    NormalizedSection,
+    RawImpactMetricPayload,
+    RawProjectPayload,
+    RawSkillClaimPayload,
+    RawStructuredDossierPayload,
+    RawWorkExperiencePayload,
+    StructuredExtractionRunnableProtocol,
+    StructuredLlmExtractorClientProtocol,
+)
+from talent_screener.infrastructure.ai_adapters.vector_store import (
+    Bm25SparseEncoder,
+    ChildChunk,
+    DenseEmbeddingClientProtocol,
+    DenseVectorMath,
+    HashProjectionDenseEmbeddingClient,
+    HierarchicalChunkBundle,
+    HierarchicalDocumentChunker,
+    HybridVectorSearchAdapter,
+    ParentChunk,
+)
+
+__all__ = [
+    "Bm25SparseEncoder",
+    "ChildChunk",
+    "DenseEmbeddingClientProtocol",
+    "DenseVectorMath",
+    "DeterministicRuleBasedExtractorClient",
+    "DocumentSectionType",
+    "DocumentTextNormalizer",
+    "GroundingVerifier",
+    "HashProjectionDenseEmbeddingClient",
+    "HierarchicalChunkBundle",
+    "HierarchicalDocumentChunker",
+    "HybridVectorSearchAdapter",
+    "LangChainDocumentParserAdapter",
+    "NormalizedDocumentTree",
+    "NormalizedSection",
+    "ParentChunk",
+    "RawImpactMetricPayload",
+    "RawProjectPayload",
+    "RawSkillClaimPayload",
+    "RawStructuredDossierPayload",
+    "RawWorkExperiencePayload",
+    "StructuredExtractionRunnableProtocol",
+    "StructuredLlmExtractorClientProtocol",
+]
