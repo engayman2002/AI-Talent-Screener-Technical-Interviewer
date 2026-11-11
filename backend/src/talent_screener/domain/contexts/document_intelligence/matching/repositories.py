@@ -23,6 +23,13 @@ class SemanticMatchResultRepositoryPort(Protocol):
         match_result_id: UUID,
     ) -> SemanticMatchResult | None: ...
 
+    def get_by_candidate_and_requisition(
+        self,
+        tenant_id: TenantId,
+        requisition_id: UUID,
+        candidate_profile_id: UUID,
+    ) -> SemanticMatchResult | None: ...
+
     def list_by_requisition(
         self,
         tenant_id: TenantId,

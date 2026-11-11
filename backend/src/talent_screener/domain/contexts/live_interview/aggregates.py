@@ -392,6 +392,35 @@ class InterviewSession(AggregateRoot[UUID]):
             )
         )
 
+    def record_telemetry_snapshot(
+        self,
+        snapshot: TelemetrySnapshot,
+        *,
+        flags: Sequence[IntegrityFlag] = (),
+    ) -> None:
+        """Append a standalone client integrity telemetry snapshot during an active session."""
+        if self._status is not SessionStatus.IN_PROGRESS:
+            raise InvalidStateTransitionError(
+                f"Telemetry can only be recorded while IN_PROGRESS; got {self._status}.",
+                from_state=self._status.value,
+                code="SESSION_NOT_IN_PROGRESS",
+            )
+        self._telemetry_snapshots.append(snapshot)
+        if flags:
+            self._integrity_flags.extend(flags)
+            max_flag = max(flags, key=lambda fl: _SEVERITY_RANK.get(fl.severity, 0))
+            self._record_event(
+                IntegrityAnomalyDetectedEvent(
+                    aggregate_id=self._id,
+                    tenant_id=self._tenant_id,
+                    session_id=self._id,
+                    turn_number=snapshot.turn_number,
+                    flag_codes=tuple(fl.flag_code for fl in flags),
+                    max_severity=max_flag.severity,
+                )
+            )
+        self._increment_version()
+
     def _register_socratic_probe(self, probe: SocraticProbe, turn_number: int) -> None:
         current_count = self._probe_counts_by_competency.get(probe.competency_id, 0)
         if current_count >= MAX_SOCRATIC_PROBES_PER_COMPETENCY:

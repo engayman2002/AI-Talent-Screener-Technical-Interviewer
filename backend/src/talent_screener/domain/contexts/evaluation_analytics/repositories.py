@@ -22,3 +22,10 @@ class EvaluationReportRepositoryPort(Protocol):
         tenant_id: TenantId,
         interview_session_id: UUID,
     ) -> EvaluationReport | None: ...
+
+    def get_by_candidate_and_requisition(
+        self,
+        tenant_id: TenantId,
+        requisition_id: UUID,
+        candidate_profile_id: UUID,
+    ) -> EvaluationReport | None: ...

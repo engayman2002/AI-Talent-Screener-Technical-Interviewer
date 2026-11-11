@@ -235,6 +235,11 @@ class _StubMatchRepo:
     ) -> SemanticMatchResult | None:
         return None
 
+    def get_by_candidate_and_requisition(
+        self, tenant_id: TenantId, requisition_id: UUID, candidate_profile_id: UUID
+    ) -> SemanticMatchResult | None:
+        return None
+
     def list_by_requisition(
         self, tenant_id: TenantId, requisition_id: UUID
     ) -> tuple[SemanticMatchResult, ...]:
@@ -257,10 +262,18 @@ class _StubReportRepo:
     ) -> EvaluationReport | None:
         return None
 
+    def get_by_candidate_and_requisition(
+        self, tenant_id: TenantId, requisition_id: UUID, candidate_profile_id: UUID
+    ) -> EvaluationReport | None:
+        return None
+
 
 class _StubTenantRepo:
     def save(self, tenant: TenantAccount) -> None: ...
     def get_by_id(self, tenant_id: TenantId) -> TenantAccount | None:
+        return None
+
+    def get_by_slug(self, organization_slug: str) -> TenantAccount | None:
         return None
 
 

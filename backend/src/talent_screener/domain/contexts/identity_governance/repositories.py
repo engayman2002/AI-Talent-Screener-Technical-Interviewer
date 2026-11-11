@@ -20,6 +20,8 @@ class TenantAccountRepositoryPort(Protocol):
 
     def get_by_id(self, tenant_id: TenantId) -> TenantAccount | None: ...
 
+    def get_by_slug(self, organization_slug: str) -> TenantAccount | None: ...
+
 
 @runtime_checkable
 class ConsentRecordRepositoryPort(Protocol):
