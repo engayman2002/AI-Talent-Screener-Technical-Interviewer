@@ -7,6 +7,7 @@
 ![Phase 5](https://img.shields.io/badge/Phase%205-Complete-brightgreen)
 ![Phase 6](https://img.shields.io/badge/Phase%206-Complete-brightgreen)
 ![Phase 7](https://img.shields.io/badge/Phase%207-Complete-brightgreen)
+![Phase 8](https://img.shields.io/badge/Phase%208-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)
@@ -27,7 +28,7 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 5. **Phase 5 Presentation API, RFC 9457 Governance, Priority Batch Orchestration & WebSocket Protocol (`presentation/`, `infrastructure/messaging/`):** Clean-Architecture delivery layer wired via `build_phase5_container()` featuring a 20-endpoint v1 REST API router, RFC 9457 `ProblemDetailsResponse` translator (`400`–`503`), HS256 Bearer JWT authentication & RBAC/cross-tenant middleware, SHA-256 `Idempotency-Key` replay, per-tenant HTTP rate limits, `ADR-006` `PriorityReservedTokenBucketLimiter` + `BatchIngestionWorkerCoordinator` (WFQ + Little's Law bounds), replayable `Last-Event-ID` SSE progress streams, and `ADR-007` full-duplex WebSocket gateway (`/v1/interviews/{session_id}/ws`) with adaptive silence thresholds ($T_{\text{silence}}$) and preemptive TTS barge-in cancellation.
 6. **Phase 6 ACID Relational Persistence, Transactional Outbox, INT8 Quantization & Fenced Checkpointing (`infrastructure/persistence/`):** Production persistence stack wired via `build_phase6_container()` — dual SQLite WAL/PostgreSQL DDL schema (`SqlDatabaseManager`, 17 relational tables), bidirectional Domain Data Mappers with strict `tenant_id` isolation and Optimistic Concurrency Control (`version = version + 1`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows, `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`), `Int8ScalarQuantizer` + `QuantizedHybridVectorStoreBackend` (oversampled INT8 pre-filter + exact `float32` cosine rescoring), `TransactionalOutboxRelayWorker` + `CrossStoreAntiEntropyReconciler`, and `ADR-009` `TwoTierFencedStateCheckpointer` (TTL L1 cache + SHA-256-verified SQL L2 with monotonic fencing).
 7. **Phase 7 Frontend Clean Architecture & Next.js App Router Portal (`frontend/`):** Four-layer strict TypeScript (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, zero `any`) frontend engineered around `ADR-010` and `ADR-011` — pure Domain 13-state Interview FSM, Web Audio ring-buffer & VAD barge-in math, non-intrusive keystroke/paste/focus telemetry math, Empirical Bayes candidate comparison algebra, framework-agnostic Application Coordinators & Outbound Ports, Infrastructure WebSocket/rAF-coalesced SSE/Web Audio/DOM/REST adapters, manual DI `createFrontendServices()` composition root, and Next.js 15 App Router UI portals.
-8. **Remaining Production Topology Layer (Upcoming Phase):** Infrastructure-as-code, CI/CD, observability telemetry pipelines, and deployment topology (Phase 8).
+8. **Phase 8 AI Security Defense-in-Depth, OpenTelemetry Observability, FinOps Governance, Rubric Drift & Production Topology (`infrastructure/security/`, `infrastructure/observability/`, `infrastructure/messaging/`, `presentation/rest/`, `docker-compose.production.yml`):** Complete production stack wired via `build_phase8_container()` (`build_production_container`) — cryptographic nonce delimiter sandbox (`NonceDelimiterEnvelope`), session canary leak quarantine (`CanaryTokenLeakVerifier`), Dual-LLM Reader->Judge extraction (`DualLlmQuarantineExtractor`), escalating Three-Strike policy (`AdversarialStrikeTracker`), PII-scrubbing W3C `traceparent` OTel tracer (`StructuredOpenTelemetryTracerAdapter`), 80%/100% FinOps model tier router (`MultiTenantFinOpsController`), PSI / two-sample $D_{\text{KS}}$ / Cohen's $\kappa$ calibration monitor (`RubricDriftMonitor`), cross-node WebSocket Pub/Sub backplane with graceful node draining (`StatelessWebSocketPubSubBackplane`), hysteresis worker autoscaler (`QueueDepthWorkerAutoscaler`), operational health/readiness/metrics endpoints (`/health/live`, `/health/ready`, `/v1/ops/metrics`), multi-stage Dockerfiles, `docker-compose.production.yml`, and `.github/workflows/ci.yml`.
 
 ### Core Bounded Contexts
 
@@ -99,6 +100,17 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 | **Infrastructure Adapters** | `frontend/src/infrastructure/` | `FetchRestApiClientAdapter` (JWT, `Idempotency-Key`, RFC 9457 `ProblemDetailsError`), `ReconnectingInterviewWebSocketAdapter` (exponential backoff + `session.join`), `RafCoalescedBatchSseAdapter` (60 FPS `requestAnimationFrame` delta coalescing + `Last-Event-ID`), `WebAudioRingBufferAdapter`, `BrowserIntegrityTelemetryAdapter` |
 | **Composition, Hooks & App Router UI** | `frontend/src/composition/`, `frontend/src/presentation/`, `frontend/src/app/` | `createFrontendServices`, `AppServicesProvider`, `useInterviewController`, `useBatchMonitor`, `useComparisonMatrix`, `InterviewPortalView`, `BatchMonitorView`, `ComparisonMatrixView`, routes `/`, `/interview/[sessionId]`, `/recruiter/batches/[batchId]`, `/recruiter/requisitions/[requisitionId]/compare` |
 
+### Phase 8 AI Security Firewall, OTel Observability, FinOps, Rubric Drift & HA Topology
+
+| Subsystem | Package / File Path | Implemented Security, Observability, Scaling & Deployment Blocks |
+| :--- | :--- | :--- |
+| **Defense-in-Depth Security (`ADR-012`)** | `infrastructure/security/defense_in_depth.py` | `NonceDelimiterEnvelope` (`<untrusted_candidate_input_{nonce}>` breakout protection), `CanaryTokenLeakVerifier` (`SYSTEM_PROMPT_CANARY_LEAK` quarantine & fallback), `DualLlmQuarantineExtractor` (unprivileged Reader + grounded Judge), `AdversarialStrikeTracker` (3-strike + critical $\ge 0.85$ early termination), `DefenseInDepthFirewall` |
+| **OTel GenAI Tracer & PII Scrubber (`ADR-013`)** | `infrastructure/observability/otel_tracer.py` | `StructuredOpenTelemetryTracerAdapter` fulfilling `ObservabilityTracerPort`, W3C `traceparent` (`parse_traceparent`) parent-child nesting, automatic PII/token scrubbing (`redact_pii_text`), $P_{50}/P_{95}/P_{99}$ latency percentile telemetry |
+| **FinOps Cost Attribution & Tier Router** | `infrastructure/observability/finops_governance.py` | `MultiTenantFinOpsController` tracking integer `cost_micro_usd` + prefix cache hit ratio $\eta_{\text{cache}}$, auto-downgrading to `COST_OPTIMIZED_FAST_MODEL` at 80% quota and tripping `FINOPS_HARD_BUDGET_EXCEEDED` at 100% |
+| **Statistical Rubric Drift & Fairness** | `infrastructure/observability/rubric_drift_monitor.py` | `compute_psi`, `compute_psi_from_scores` (`STABLE`/`MODERATE_DRIFT`/`CRITICAL_DRIFT`), `compute_ks_two_sample` ($D_{\text{KS}}$ vs. critical value), `compute_cohens_kappa` (unweighted $\kappa$ + quadratic weighted $\kappa_w$, `RUBRIC_CALIBRATION_DEGRADED` alert at $< 0.70$), `RubricDriftMonitor` |
+| **Stateless WS Backplane, Autoscaler & Ops API** | `infrastructure/messaging/`, `presentation/` | `StatelessWebSocketPubSubBackplane` (cross-node routing + `initiate_graceful_drain`), `QueueDepthWorkerAutoscaler` & `compute_ws_gateway_replicas`, `OpsController` & `RestApiRouter` routes (`/health/live`, `/health/ready`, `/v1/ops/metrics`), `Phase8PipelineBundle` / `build_production_container()` |
+| **Containers & CI/CD** | `backend/Dockerfile`, `frontend/Dockerfile`, `docker-compose.production.yml`, `.github/workflows/ci.yml` | Multi-stage non-root Python 3.12 & Node 22 images, full Postgres + Redis + Qdrant + API + Worker + Frontend Compose topology, automated Ruff / Mypy / Import-Linter / Pytest & TypeScript / Vitest CI pipeline |
+
 ---
 
 ## Implementation Roadmap & Status
@@ -138,7 +150,11 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - 13-state Candidate Interview Portal FSM (`transitionInterviewFsm`), Web Audio `PcmRingBuffer`, 280ms VAD hysteresis (`VoiceActivityHysteresisTracker`), and exact wall-clock barge-in offset truncation ($t_{\text{played\_ms}}$)
   - Non-intrusive client telemetry pipeline (`assessPasteAndKeystrokeAnomalies`, $S_{\text{focus}}$, $S_{\text{cadence}}$) guaranteeing zero cadence penalty under Accommodated Text Mode
   - `ADR-011` `RafCoalescedBatchSseAdapter` coalescing rapid SSE task deltas at 60 FPS, Empirical Bayes Candidate Comparison Matrix (`buildNormalizedComparisonMatrix`), Blind Hiring mode toggle, Evidence Drilldown Drawer, and auditable Recruiter Overrides
-- [ ] **Phase 8:** AI Security, Guardrails, Observability & Production Topology
+- [x] **Phase 8: AI Security Defense-in-Depth, OpenTelemetry Observability, FinOps Governance, Rubric Drift & Production Topology** — **Complete**
+  - `ADR-012` 4-layer defense pipeline (`NonceDelimiterEnvelope`, `CanaryTokenLeakVerifier`, `DualLlmQuarantineExtractor`, `AdversarialStrikeTracker`, `DefenseInDepthFirewall`)
+  - `ADR-013` W3C TraceContext OpenTelemetry GenAI tracer with automated PII scrubbing (`StructuredOpenTelemetryTracerAdapter`), 80%/100% FinOps model tier routing (`MultiTenantFinOpsController`), and formal statistical rubric drift & calibration monitoring (`compute_psi`, `compute_ks_two_sample`, `compute_cohens_kappa`, `RubricDriftMonitor`)
+  - `StatelessWebSocketPubSubBackplane` with turn-boundary graceful node drain + L2 SQL checkpoint failover, hysteresis `QueueDepthWorkerAutoscaler`, and operational `/health/live`, `/health/ready`, `/v1/ops/metrics` REST endpoints wired via `build_production_container()`
+  - Production multi-stage non-root Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`), `docker-compose.production.yml`, and `.github/workflows/ci.yml` (All 8 Phases **Complete**)
 
 ---
 
@@ -201,3 +217,13 @@ npm run coverage
 # 3. Production Next.js App Router bundle check
 npm run build
 ```
+
+### Production Stack Deployment (`docker-compose.production.yml`)
+
+```bash
+docker compose -f docker-compose.production.yml up --build -d
+```
+
+Verified monorepo baseline metrics:
+- **Backend:** `94 passed` across unit, integration & Clean Architecture/SOLID fitness tests (`90.62%` combined statement+branch coverage), `mypy --strict` passing across `248 source files`, `ruff` passing, and `lint-imports` (`5 kept, 0 broken`).
+- **Frontend:** `tsc --noEmit` (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`) passing and Vitest suite (`4 test files, 17 tests passed`, including TypeScript AST Clean Architecture boundary enforcement).

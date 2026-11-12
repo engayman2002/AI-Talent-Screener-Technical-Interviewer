@@ -22,14 +22,16 @@ _OVERRIDE_PATTERNS: tuple[tuple[re.Pattern[str], float], ...] = (
     (
         re.compile(
             r"\b(?:ignore|disregard|forget|bypass|override)\s+(?:all\s+|any\s+)?"
-            r"(?:previous|prior|above|system|earlier|all)\s+(?:instructions|prompts|rules|rubric|directives)\b",
+            r"(?:(?:previous|prior|above|system|earlier|hidden|original)\s+){1,3}"
+            r"(?:instructions|prompts|rules|rubric|directives)\b",
             re.I,
         ),
         1.0,
     ),
     (
         re.compile(
-            r"\b(?:give|award|assign|set|score|grant)\s+(?:me|this\s+candidate|the\s+candidate|my\s+score)?\s*"
+            r"\b(?:give|award|assign|set|score|grant)\s+"
+            r"(?:(?:me|all|this\s+candidate|the\s+candidate|my\s+score|rubric|scores?)\s+){0,3}"
             r"(?:a\s+|to\s+)?(?:perfect|maximum|max|full|100|5/5|5\.0|strong[_\s]?hire)\b",
             re.I,
         ),

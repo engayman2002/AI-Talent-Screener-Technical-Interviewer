@@ -6,8 +6,10 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
-from talent_screener.domain.shared.uuid7 import generate_uuid7
+from talent_screener.domain.shared.uuid7 import generate_uuid7, utc_now
+from talent_screener.domain.shared.value_objects import TenantId
 from talent_screener.presentation.middleware import (
     AuthenticationError,
     BearerTokenAuthenticator,
@@ -23,8 +25,11 @@ from talent_screener.presentation.rest.document_intelligence_controller import (
 from talent_screener.presentation.rest.evaluation_controller import EvaluationController
 from talent_screener.presentation.rest.identity_controller import IdentityController
 from talent_screener.presentation.rest.live_interview_controller import LiveInterviewController
+from talent_screener.presentation.rest.ops_controller import OpsController
 from talent_screener.presentation.rest.recruitment_controller import RecruitmentController
 from talent_screener.presentation.schemas import HttpRequest, HttpResponse, ResponseMeta
+
+_PUBLIC_HEALTH_TENANT = TenantId.generate()
 
 RouteHandlerFn = Callable[
     [HttpRequest, dict[str, str], PrincipalContext, ResponseMeta],
@@ -56,6 +61,7 @@ class RouteSpec:
     rate_bucket: str
     supports_idempotency: bool
     handler: RouteHandlerFn
+    requires_auth: bool = True
 
 
 def _normalize_v1_path(raw_path: str) -> str:
@@ -81,11 +87,13 @@ class RestApiRouter:
         interview_controller: LiveInterviewController,
         evaluation_controller: EvaluationController,
         identity_controller: IdentityController,
+        ops_controller: OpsController | None = None,
         error_translator: ExceptionToProblemDetailsTranslator | None = None,
     ) -> None:
         self._auth = authenticator
         self._rate_limiter = rate_limiter
         self._idempotency = idempotency_middleware
+        self._ops = ops_controller if ops_controller is not None else OpsController()
         self._translator = (
             error_translator
             if error_translator is not None
@@ -97,6 +105,7 @@ class RestApiRouter:
             interview=interview_controller,
             evaluation=evaluation_controller,
             identity=identity_controller,
+            ops=self._ops,
         )
 
     @property
@@ -112,6 +121,7 @@ class RestApiRouter:
         interview: LiveInterviewController,
         evaluation: EvaluationController,
         identity: IdentityController,
+        ops: OpsController,
     ) -> tuple[RouteSpec, ...]:
         async def _req_create(
             req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
@@ -223,6 +233,24 @@ class RestApiRouter:
             req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
         ) -> HttpResponse:
             return await identity.erase_candidate_pii(req, params["candidate_id"], p, meta)
+
+        async def _ops_live(
+            req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
+        ) -> HttpResponse:
+            _ = (params, p, meta)
+            return await ops.liveness(req)
+
+        async def _ops_ready(
+            req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
+        ) -> HttpResponse:
+            _ = (params, p, meta)
+            return await ops.readiness(req)
+
+        async def _ops_metrics(
+            req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
+        ) -> HttpResponse:
+            _ = params
+            return await ops.metrics(req, p, meta)
 
         return (
             RouteSpec(
@@ -411,6 +439,35 @@ class RestApiRouter:
                 supports_idempotency=False,
                 handler=_id_erase,
             ),
+            RouteSpec(
+                method="GET",
+                pattern=re.compile(r"^/health/live$"),
+                required_scopes=(),
+                any_of_scopes=False,
+                rate_bucket="ops_health",
+                supports_idempotency=False,
+                handler=_ops_live,
+                requires_auth=False,
+            ),
+            RouteSpec(
+                method="GET",
+                pattern=re.compile(r"^/health/ready$"),
+                required_scopes=(),
+                any_of_scopes=False,
+                rate_bucket="ops_health",
+                supports_idempotency=False,
+                handler=_ops_ready,
+                requires_auth=False,
+            ),
+            RouteSpec(
+                method="GET",
+                pattern=re.compile(r"^/v1/ops/metrics$"),
+                required_scopes=(RbacScope.GOVERNANCE_ADMIN,),
+                any_of_scopes=False,
+                rate_bucket="governance_admin",
+                supports_idempotency=False,
+                handler=_ops_metrics,
+            ),
         )
 
     def _resolve_route(
@@ -461,6 +518,23 @@ class RestApiRouter:
         base_headers: dict[str, str] = {"X-Request-ID": request_id, "X-Trace-ID": trace_id}
         principal: PrincipalContext | None = None
         try:
+            if not route.requires_auth:
+                sys_tenant = _PUBLIC_HEALTH_TENANT
+                public_principal = PrincipalContext(
+                    tenant_id=sys_tenant,
+                    actor_id=UUID(int=0),
+                    scopes=frozenset(),
+                    token_jti="public-health",
+                    expires_at=utc_now(),
+                )
+                public_meta = ResponseMeta(
+                    request_id=request_id,
+                    trace_id=trace_id,
+                    tenant_id=sys_tenant,
+                )
+                pub_res = await route.handler(request, path_params, public_principal, public_meta)
+                return pub_res.with_headers(base_headers)
+
             principal = self._auth.authenticate(request.header("Authorization"))
             if request.body is not None and "tenant_id" in request.body:
                 self._auth.assert_tenant_match(

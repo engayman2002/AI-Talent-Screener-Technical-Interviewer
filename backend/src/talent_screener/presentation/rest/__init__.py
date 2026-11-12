@@ -7,6 +7,7 @@ from talent_screener.presentation.rest.document_intelligence_controller import (
 from talent_screener.presentation.rest.evaluation_controller import EvaluationController
 from talent_screener.presentation.rest.identity_controller import IdentityController
 from talent_screener.presentation.rest.live_interview_controller import LiveInterviewController
+from talent_screener.presentation.rest.ops_controller import OpsController
 from talent_screener.presentation.rest.recruitment_controller import RecruitmentController
 from talent_screener.presentation.rest.router import RestApiRouter, RouteSpec
 
@@ -15,6 +16,7 @@ __all__ = [
     "EvaluationController",
     "IdentityController",
     "LiveInterviewController",
+    "OpsController",
     "RecruitmentController",
     "RestApiRouter",
     "RouteSpec",

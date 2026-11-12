@@ -7,6 +7,7 @@ from talent_screener.composition_root.container import (
     Phase4PipelineBundle,
     Phase5PipelineBundle,
     Phase6PipelineBundle,
+    Phase8PipelineBundle,
     RepositoryRegistry,
     build_in_memory_repositories,
     build_phase3_container,
@@ -15,7 +16,10 @@ from talent_screener.composition_root.container import (
     build_phase4_external_adapters,
     build_phase5_container,
     build_phase6_container,
+    build_phase8_container,
+    build_production_container,
     build_sql_repositories,
+    build_ws_cluster_hooks,
 )
 from talent_screener.composition_root.protocols import (
     ApplicationContainerPort,
@@ -32,6 +36,7 @@ __all__ = [
     "Phase4PipelineBundle",
     "Phase5PipelineBundle",
     "Phase6PipelineBundle",
+    "Phase8PipelineBundle",
     "RepositoryRegistry",
     "UseCaseCatalogPort",
     "build_in_memory_repositories",
@@ -41,5 +46,8 @@ __all__ = [
     "build_phase4_external_adapters",
     "build_phase5_container",
     "build_phase6_container",
+    "build_phase8_container",
+    "build_production_container",
     "build_sql_repositories",
+    "build_ws_cluster_hooks",
 ]

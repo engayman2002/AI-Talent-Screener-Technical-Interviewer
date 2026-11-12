@@ -1,5 +1,11 @@
-"""Messaging, Resilience, Priority Rate Limiting & SSE Progress Broker exports."""
+"""Messaging, Resilience, Priority Rate Limiting, Autoscaling & WS Backplane exports."""
 
+from talent_screener.infrastructure.messaging.autoscaler import (
+    AutoscalingDecision,
+    QueueDepthWorkerAutoscaler,
+    WorkerPoolScalingPolicy,
+    compute_ws_gateway_replicas,
+)
 from talent_screener.infrastructure.messaging.batch_orchestrator import (
     BatchExecutionSummary,
     BatchIngestionWorkerCoordinator,
@@ -38,8 +44,15 @@ from talent_screener.infrastructure.messaging.sse_broker import (
     ReplayableSseProgressBroker,
     SseChannelSubscription,
 )
+from talent_screener.infrastructure.messaging.ws_backplane import (
+    BackplanePubSubMessage,
+    DrainExecutionSummary,
+    StatelessWebSocketPubSubBackplane,
+)
 
 __all__ = [
+    "AutoscalingDecision",
+    "BackplanePubSubMessage",
     "BatchExecutionSummary",
     "BatchIngestionWorkerCoordinator",
     "BatchWorkerMetrics",
@@ -47,6 +60,7 @@ __all__ = [
     "CircuitBreaker",
     "CircuitState",
     "DeadLetterRecord",
+    "DrainExecutionSummary",
     "ExponentialBackoffRetryPolicy",
     "FencingTokenDistributedLockAdapter",
     "InMemoryDeadLetterQueue",
@@ -55,13 +69,17 @@ __all__ = [
     "InMemoryTaskQueueDispatcher",
     "LockLeaseEntry",
     "PriorityReservedTokenBucketLimiter",
+    "QueueDepthWorkerAutoscaler",
     "RateLimitAcquisitionOutcome",
     "ReplayableSseProgressBroker",
     "RequestPriorityLane",
     "ResilientTaskExecutor",
     "SseChannelSubscription",
+    "StatelessWebSocketPubSubBackplane",
     "TaskExecutionOutcome",
+    "WorkerPoolScalingPolicy",
     "classify_failure",
     "compute_littles_law_concurrency",
     "compute_queue_backpressure_delay",
+    "compute_ws_gateway_replicas",
 ]

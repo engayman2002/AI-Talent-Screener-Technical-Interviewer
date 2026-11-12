@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from uuid import UUID
 
 from talent_screener.application.common.ports.outbound import (
     DistributedLockPort,
@@ -85,6 +86,7 @@ from talent_screener.domain.contexts.live_interview import (
     InterviewSessionStartedEvent,
 )
 from talent_screener.domain.contexts.recruitment import JobRequisitionRepositoryPort
+from talent_screener.domain.shared.value_objects import TenantId
 from talent_screener.infrastructure.ai_adapters.audio_adapters import (
     StreamingAudioSttAdapter,
     StreamingAudioTtsAdapter,
@@ -115,10 +117,18 @@ from talent_screener.infrastructure.messaging import (
     InMemoryDomainEventBus,
     InMemoryTaskQueueDispatcher,
     PriorityReservedTokenBucketLimiter,
+    QueueDepthWorkerAutoscaler,
     ReplayableSseProgressBroker,
     ResilientTaskExecutor,
+    StatelessWebSocketPubSubBackplane,
+    WorkerPoolScalingPolicy,
 )
-from talent_screener.infrastructure.observability import InMemoryObservabilityTracer
+from talent_screener.infrastructure.observability import (
+    InMemoryObservabilityTracer,
+    MultiTenantFinOpsController,
+    RubricDriftMonitor,
+    StructuredOpenTelemetryTracerAdapter,
+)
 from talent_screener.infrastructure.persistence import (
     CrossStoreAntiEntropyReconciler,
     DatabaseConnectionConfig,
@@ -154,6 +164,7 @@ from talent_screener.infrastructure.persistence import (
 from talent_screener.infrastructure.security import (
     AdversarialPromptGuardrailAdapter,
     CryptographicPiiVaultAdapter,
+    DefenseInDepthFirewall,
     EnvelopeCipherProtocol,
     SignatureAndHeuristicVirusScannerAdapter,
 )
@@ -168,10 +179,14 @@ from talent_screener.presentation.rest import (
     EvaluationController,
     IdentityController,
     LiveInterviewController,
+    OpsController,
     RecruitmentController,
     RestApiRouter,
 )
-from talent_screener.presentation.websocket import WebSocketInterviewGateway
+from talent_screener.presentation.websocket import (
+    WebSocketClusterHooks,
+    WebSocketInterviewGateway,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +294,7 @@ def build_phase4_external_adapters(
     max_tokens_per_window: int | None = None,
     idempotency_store: IdempotencyStorePort | None = None,
     pii_vault: PiiVaultPort | None = None,
+    observability_tracer: ObservabilityTracerPort | None = None,
 ) -> ExternalAdapterRegistry:
     """Wire concrete Phase 3 & Phase 4 Document, Security, Vector, and LangGraph adapters."""
     object_storage = TenantScopedObjectStorageAdapter()
@@ -291,7 +307,11 @@ def build_phase4_external_adapters(
     resolved_idempotency: IdempotencyStorePort = (
         idempotency_store if idempotency_store is not None else InMemoryIdempotencyStore()
     )
-    tracer = InMemoryObservabilityTracer()
+    tracer: ObservabilityTracerPort = (
+        observability_tracer
+        if observability_tracer is not None
+        else InMemoryObservabilityTracer()
+    )
     document_parser = LangChainDocumentParserAdapter(
         object_storage=object_storage,
         pii_vault=resolved_pii_vault,
@@ -501,6 +521,8 @@ def _build_presentation_and_workers(
     bucket_matching_reserve: int,
     bucket_refill_tokens_per_second: float,
     clock_fn: Callable[[], float] | None,
+    ops_controller: OpsController | None = None,
+    ws_cluster_hooks: WebSocketClusterHooks | None = None,
 ) -> tuple[
     PriorityReservedTokenBucketLimiter,
     BatchIngestionWorkerCoordinator,
@@ -571,6 +593,7 @@ def _build_presentation_and_workers(
             revoke_consent=container.revoke_candidate_consent,
             execute_erasure=container.execute_candidate_erasure,
         ),
+        ops_controller=ops_controller,
         error_translator=error_translator,
     )
     ws_gateway = WebSocketInterviewGateway(
@@ -582,6 +605,7 @@ def _build_presentation_and_workers(
         stt_port=adapters.audio_stt,
         tts_port=adapters.audio_tts,
         error_translator=error_translator,
+        cluster_hooks=ws_cluster_hooks,
     )
     return (
         priority_limiter,
@@ -838,6 +862,378 @@ def build_phase6_container(
         rest_router=rest_router,
         ws_gateway=ws_gateway,
     )
+
+
+def build_ws_cluster_hooks(
+    *,
+    node_id: str,
+    backplane: StatelessWebSocketPubSubBackplane,
+    checkpointer: TwoTierFencedStateCheckpointer,
+) -> WebSocketClusterHooks:
+    """Bind WebSocketClusterHooks to shared Pub/Sub backplane and L2 SQL checkpointer."""
+
+    def _subscribe(
+        sub_node: str,
+        tenant_id: TenantId,
+        session_id: UUID,
+        callback: Callable[[object], object],
+    ) -> None:
+        backplane.subscribe_session(
+            node_id=sub_node,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            callback=callback,  # type: ignore[arg-type]
+        )
+
+    def _unsubscribe(sub_node: str, tenant_id: TenantId, session_id: UUID) -> None:
+        backplane.unsubscribe_session(
+            node_id=sub_node,
+            tenant_id=tenant_id,
+            session_id=session_id,
+        )
+
+    def _flush_checkpoint(tenant_id: TenantId, session_id: UUID) -> None:
+        # Force L2 SQL verification so peer nodes reload an intact SHA-256 verified snapshot
+        checkpointer.invalidate_l1(tenant_id=tenant_id, session_id=session_id)
+        _ = checkpointer.load_latest(tenant_id, session_id)
+
+    def _hydrate_session(
+        tenant_id: TenantId, session_id: UUID
+    ) -> Mapping[str, object] | None:
+        snap = checkpointer.load_latest(tenant_id, session_id)
+        if snap is None:
+            return None
+        rt = snap.state.routing
+        return {
+            "turn_number": rt.completed_turns + 1,
+            "active_question": rt.active_prompt_text,
+            "difficulty": int(rt.current_difficulty),
+            "checkpoint_version": snap.checkpoint_version,
+            "tokens_consumed": rt.total_tokens_consumed,
+            "remaining_seconds": snap.state.metadata.max_wall_clock_seconds,
+            "is_completed": rt.phase.value == "COMPLETED",
+        }
+
+    return WebSocketClusterHooks(
+        node_id=node_id,
+        subscribe_fn=_subscribe,
+        unsubscribe_fn=_unsubscribe,
+        publish_fn=lambda t_id, s_id, ev, pl, src, tr: backplane.publish_session_event(
+            tenant_id=t_id,
+            session_id=s_id,
+            event_type=ev,
+            payload=pl,
+            source_node_id=src,
+            trace_id=tr,
+        ),
+        mark_draining_fn=backplane.mark_draining,
+        register_drain_handler_fn=lambda n_id, fn: backplane.register_node(
+            n_id, drain_handler=fn
+        ),
+        checkpoint_flush_fn=_flush_checkpoint,
+        session_hydrator_fn=_hydrate_session,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Phase8PipelineBundle:
+    """Complete Production Stack (Phases 1-8): Persistence, Security, OTel, FinOps, Drift & Ops."""
+
+    db_manager: SqlDatabaseManager
+    container: ApplicationContainer
+    repositories: RepositoryRegistry
+    adapters: ExternalAdapterRegistry
+    uow: SqlTransactionalUnitOfWork
+    event_bus: InMemoryDomainEventBus
+    dlq: InMemoryDeadLetterQueue
+    resilient_executor: ResilientTaskExecutor
+    idempotency_store: SqlIdempotencyStoreAdapter
+    pii_vault: SqlCandidatePiiVaultStore
+    quantized_vector_backend: QuantizedHybridVectorStoreBackend
+    outbox_relay: TransactionalOutboxRelayWorker
+    reconciler: CrossStoreAntiEntropyReconciler
+    checkpointer: TwoTierFencedStateCheckpointer
+    interview_graph: LangGraphAdaptiveInterviewAdapter
+    guardrail: AdversarialPromptGuardrailAdapter
+    defense_firewall: DefenseInDepthFirewall
+    otel_tracer: StructuredOpenTelemetryTracerAdapter
+    finops_controller: MultiTenantFinOpsController
+    rubric_drift_monitor: RubricDriftMonitor
+    token_budget_enforcer: SlidingWindowTokenBudgetEnforcerAdapter
+    distributed_lock: FencingTokenDistributedLockAdapter
+    sse_broker: ReplayableSseProgressBroker
+    priority_limiter: PriorityReservedTokenBucketLimiter
+    batch_coordinator: BatchIngestionWorkerCoordinator
+    ws_backplane: StatelessWebSocketPubSubBackplane
+    worker_autoscaler: QueueDepthWorkerAutoscaler
+    authenticator: BearerTokenAuthenticator
+    rate_limiter: TenantRateLimiter
+    ops_controller: OpsController
+    rest_router: RestApiRouter
+    ws_gateway: WebSocketInterviewGateway
+
+    def create_peer_ws_gateway(self, *, node_id: str) -> WebSocketInterviewGateway:
+        """Instantiate a peer WebSocket gateway sharing DB, lock, checkpointer & backplane."""
+        hooks = build_ws_cluster_hooks(
+            node_id=node_id,
+            backplane=self.ws_backplane,
+            checkpointer=self.checkpointer,
+        )
+        return WebSocketInterviewGateway(
+            authenticator=self.authenticator,
+            lock_port=self.distributed_lock,
+            process_turn_use_case=self.container.process_candidate_turn,
+            record_telemetry_use_case=self.container.record_client_telemetry,
+            terminate_interview_use_case=self.container.terminate_interview_early,
+            stt_port=self.adapters.audio_stt,
+            tts_port=self.adapters.audio_tts,
+            cluster_hooks=hooks,
+        )
+
+
+def build_phase8_container(
+    *,
+    dsn: str = ":memory:",
+    db_manager: SqlDatabaseManager | None = None,
+    enable_wal: bool = True,
+    l1_ttl_seconds: float = 300.0,
+    dispatch_to_event_bus_on_commit: bool = True,
+    relay_to_event_bus: bool = False,
+    ws_node_id: str = "ws-node-1",
+    session_token_quota: int = 45_000,
+    default_tenant_token_quota: int = 2_000_000,
+    kappa_alert_threshold: float = 0.70,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
+    jwt_signing_key: bytes | None = None,
+    rate_limit_default_per_minute: int = 300,
+    bucket_rate_limits: Mapping[str, int] | None = None,
+    bucket_total_capacity: int = 100_000,
+    bucket_interview_reserve: int = 20_000,
+    bucket_matching_reserve: int = 15_000,
+    bucket_refill_tokens_per_second: float = 5_000.0,
+    clock_fn: Callable[[], float] | None = None,
+) -> Phase8PipelineBundle:
+    """Assemble full Phase 1-8 stack: Security, OTel, FinOps, Drift, WS Backplane & SQL."""
+    db = (
+        db_manager
+        if db_manager is not None
+        else SqlDatabaseManager(DatabaseConnectionConfig(dsn=dsn, enable_wal=enable_wal))
+    )
+    repositories = build_sql_repositories(db)
+    event_bus = InMemoryDomainEventBus()
+    uow = SqlTransactionalUnitOfWork(
+        db=db,
+        event_bus=event_bus,
+        dispatch_to_event_bus_on_commit=dispatch_to_event_bus_on_commit,
+    )
+    idempotency_store = SqlIdempotencyStoreAdapter(db)
+    pii_vault = SqlCandidatePiiVaultStore(db, cipher=cipher, master_kek=master_kek)
+    quantized_backend = QuantizedHybridVectorStoreBackend(db=db)
+    checkpointer = TwoTierFencedStateCheckpointer(
+        db=db,
+        l1_ttl_seconds=l1_ttl_seconds,
+    )
+    otel_tracer = StructuredOpenTelemetryTracerAdapter(clock_fn=clock_fn)
+    finops_controller = MultiTenantFinOpsController(
+        session_token_quota=session_token_quota,
+        default_tenant_token_quota=default_tenant_token_quota,
+    )
+    rubric_drift_monitor = RubricDriftMonitor(kappa_alert_threshold=kappa_alert_threshold)
+    ws_backplane = StatelessWebSocketPubSubBackplane()
+    worker_autoscaler = QueueDepthWorkerAutoscaler(clock_fn=clock_fn)
+    worker_autoscaler.register_pool(
+        WorkerPoolScalingPolicy(pool_name="pool_parse_pii", min_replicas=1, max_replicas=20)
+    )
+    worker_autoscaler.register_pool(
+        WorkerPoolScalingPolicy(
+            pool_name="pool_llm_extract",
+            min_replicas=1,
+            max_replicas=25,
+            concurrency_per_pod=10,
+        )
+    )
+    worker_autoscaler.register_pool(
+        WorkerPoolScalingPolicy(pool_name="pool_hybrid_match", min_replicas=1, max_replicas=16)
+    )
+
+    adapters = build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=quantized_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+        stt_driver=stt_driver,
+        tts_driver=tts_driver,
+        max_tokens_per_window=max_tokens_per_window,
+        idempotency_store=idempotency_store,
+        pii_vault=pii_vault,
+        observability_tracer=otel_tracer,
+    )
+    container = ApplicationContainer(
+        adapters=adapters,
+        repositories=repositories,
+        event_bus=event_bus,
+        uow=uow,
+    )
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+
+    assert isinstance(repositories.profile_repo, SqlCandidateProfileRepository)
+    assert isinstance(repositories.consent_repo, SqlConsentRecordRepository)
+
+    outbox_relay = TransactionalOutboxRelayWorker(
+        db=db,
+        profile_repo=repositories.profile_repo,
+        vector_search=adapters.hybrid_vector_search,
+        vector_backend=quantized_backend,
+        pii_vault=pii_vault,
+        event_bus=event_bus,
+        dlq=dlq,
+        relay_to_event_bus=relay_to_event_bus,
+    )
+    reconciler = CrossStoreAntiEntropyReconciler(
+        db=db,
+        profile_repo=repositories.profile_repo,
+        consent_repo=repositories.consent_repo,
+        vector_backend=quantized_backend,
+        vector_search=adapters.hybrid_vector_search,
+        pii_vault=pii_vault,
+    )
+
+    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
+    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
+    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
+    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    assert isinstance(adapters.progress_publisher, ReplayableSseProgressBroker)
+
+    defense_firewall = DefenseInDepthFirewall(guardrail=adapters.prompt_guardrail)
+    ws_cluster_hooks = build_ws_cluster_hooks(
+        node_id=ws_node_id,
+        backplane=ws_backplane,
+        checkpointer=checkpointer,
+    )
+
+    def _readiness_probe() -> tuple[bool, Mapping[str, object]]:
+        sql_ok = False
+        vector_ok = False
+        ckpt_ok = False
+        try:
+            sql_ok = db.fetchone("SELECT 1 AS ok") is not None
+        except Exception:
+            sql_ok = False
+        try:
+            vector_ok = (
+                db.fetchone("SELECT COUNT(*) AS cnt FROM vector_sync_watermarks") is not None
+            )
+        except Exception:
+            vector_ok = False
+        try:
+            ckpt_ok = (
+                db.fetchone("SELECT COUNT(*) AS cnt FROM interview_state_checkpoints") is not None
+            )
+        except Exception:
+            ckpt_ok = False
+        draining = ws_backplane.is_node_draining(ws_node_id)
+        checks: dict[str, object] = {
+            "sql_database": "ok" if sql_ok else "unavailable",
+            "vector_store": "ok" if vector_ok else "unavailable",
+            "checkpointer": "ok" if ckpt_ok else "unavailable",
+            "draining": draining,
+        }
+        return (sql_ok and vector_ok and ckpt_ok and not draining), checks
+
+    def _metrics_provider() -> Mapping[str, object]:
+        return {
+            "latency_percentiles": otel_tracer.summarize_operations(),
+            "finops_ledger": finops_controller.summarize_ledger(),
+            "rubric_drift": rubric_drift_monitor.summarize(),
+            "autoscaler": worker_autoscaler.summarize(),
+            "gateway_backplane": ws_backplane.summarize(),
+        }
+
+    ops_controller = OpsController(
+        node_id=ws_node_id,
+        readiness_probe_fn=_readiness_probe,
+        metrics_provider_fn=_metrics_provider,
+    )
+
+    (
+        priority_limiter,
+        batch_coordinator,
+        authenticator,
+        rate_limiter,
+        rest_router,
+        ws_gateway,
+    ) = _build_presentation_and_workers(
+        container=container,
+        adapters=adapters,
+        executor=executor,
+        jwt_signing_key=jwt_signing_key,
+        rate_limit_default_per_minute=rate_limit_default_per_minute,
+        bucket_rate_limits=bucket_rate_limits,
+        bucket_total_capacity=bucket_total_capacity,
+        bucket_interview_reserve=bucket_interview_reserve,
+        bucket_matching_reserve=bucket_matching_reserve,
+        bucket_refill_tokens_per_second=bucket_refill_tokens_per_second,
+        clock_fn=clock_fn,
+        ops_controller=ops_controller,
+        ws_cluster_hooks=ws_cluster_hooks,
+    )
+
+    return Phase8PipelineBundle(
+        db_manager=db,
+        container=container,
+        repositories=repositories,
+        adapters=adapters,
+        uow=uow,
+        event_bus=event_bus,
+        dlq=dlq,
+        resilient_executor=executor,
+        idempotency_store=idempotency_store,
+        pii_vault=pii_vault,
+        quantized_vector_backend=quantized_backend,
+        outbox_relay=outbox_relay,
+        reconciler=reconciler,
+        checkpointer=checkpointer,
+        interview_graph=adapters.adaptive_interview_graph,
+        guardrail=adapters.prompt_guardrail,
+        defense_firewall=defense_firewall,
+        otel_tracer=otel_tracer,
+        finops_controller=finops_controller,
+        rubric_drift_monitor=rubric_drift_monitor,
+        token_budget_enforcer=adapters.token_budget_enforcer,
+        distributed_lock=adapters.distributed_lock,
+        sse_broker=adapters.progress_publisher,
+        priority_limiter=priority_limiter,
+        batch_coordinator=batch_coordinator,
+        ws_backplane=ws_backplane,
+        worker_autoscaler=worker_autoscaler,
+        authenticator=authenticator,
+        rate_limiter=rate_limiter,
+        ops_controller=ops_controller,
+        rest_router=rest_router,
+        ws_gateway=ws_gateway,
+    )
+
+
+build_production_container = build_phase8_container
 
 
 class ApplicationContainer:

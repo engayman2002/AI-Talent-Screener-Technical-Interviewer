@@ -2,6 +2,7 @@
 
 from talent_screener.presentation.websocket.interview_ws_gateway import (
     SessionSyncSnapshot,
+    WebSocketClusterHooks,
     WebSocketConnectionContext,
     WebSocketFrame,
     WebSocketInterviewGateway,
@@ -25,6 +26,7 @@ __all__ = [
     "BargeInStreamController",
     "SessionSyncSnapshot",
     "TtsAudioChunkFrame",
+    "WebSocketClusterHooks",
     "WebSocketConnectionContext",
     "WebSocketFrame",
     "WebSocketInterviewGateway",

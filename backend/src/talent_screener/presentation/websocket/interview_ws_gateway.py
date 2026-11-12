@@ -6,7 +6,7 @@ import base64
 import binascii
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
@@ -14,6 +14,7 @@ from uuid import UUID
 
 from talent_screener.application.common.dtos import FencingLeaseDTO
 from talent_screener.application.common.exceptions import (
+    ExternalAdapterFailureError,
     GuardrailViolationError,
     UnauthorizedTenantAccessError,
 )
@@ -129,6 +130,26 @@ class WebSocketConnectionContext:
     last_vad_entropy: float = 0.45
 
 
+@dataclass(frozen=True, slots=True)
+class WebSocketClusterHooks:
+    """Optional Pub/Sub backplane & L2 checkpoint callbacks injected by Composition Root."""
+
+    node_id: str = "ws-node-1"
+    subscribe_fn: (
+        Callable[[str, TenantId, UUID, Callable[[object], Awaitable[None] | None]], None] | None
+    ) = None
+    unsubscribe_fn: Callable[[str, TenantId, UUID], None] | None = None
+    publish_fn: (
+        Callable[[TenantId, UUID, str, Mapping[str, object], str, str], Awaitable[int]] | None
+    ) = None
+    mark_draining_fn: Callable[[str, bool], None] | None = None
+    register_drain_handler_fn: (
+        Callable[[str, Callable[[int], Awaitable[tuple[object, ...]]]], None] | None
+    ) = None
+    checkpoint_flush_fn: Callable[[TenantId, UUID], None] | None = None
+    session_hydrator_fn: Callable[[TenantId, UUID], Mapping[str, object] | None] | None = None
+
+
 class WebSocketInterviewGateway:
     """Full-duplex stateful WebSocket protocol controller for live adaptive interviews."""
 
@@ -143,6 +164,7 @@ class WebSocketInterviewGateway:
         stt_port: AudioSttPort,
         tts_port: AudioTtsPort,
         error_translator: ExceptionToProblemDetailsTranslator | None = None,
+        cluster_hooks: WebSocketClusterHooks | None = None,
     ) -> None:
         self._auth = authenticator
         self._lock_port = lock_port
@@ -156,9 +178,31 @@ class WebSocketInterviewGateway:
             if error_translator is not None
             else ExceptionToProblemDetailsTranslator()
         )
+        self._cluster = cluster_hooks
+        self._node_id = cluster_hooks.node_id if cluster_hooks is not None else "ws-node-1"
+        self._is_draining = False
         self._sessions: dict[UUID, _MutableSessionState] = {}
         self._connections: dict[UUID, WebSocketConnectionContext] = {}
         self._active_conn_by_session: dict[UUID, UUID] = {}
+        self._backplane_inbox: dict[UUID, list[WebSocketFrame]] = {}
+        if cluster_hooks is not None and cluster_hooks.register_drain_handler_fn is not None:
+            cluster_hooks.register_drain_handler_fn(self._node_id, self.initiate_graceful_drain)
+
+    @property
+    def node_id(self) -> str:
+        return self._node_id
+
+    @property
+    def is_draining(self) -> bool:
+        return self._is_draining
+
+    @property
+    def active_connection_count(self) -> int:
+        return len(self._connections)
+
+    def get_backplane_inbox(self, session_id: UUID) -> tuple[WebSocketFrame, ...]:
+        """Return ordered cross-node frames received via Pub/Sub backplane for ``session_id``."""
+        return tuple(self._backplane_inbox.get(session_id, ()))
 
     @staticmethod
     def match_ws_path(path: str) -> UUID | None:
@@ -220,6 +264,14 @@ class WebSocketInterviewGateway:
         remaining_seconds: int = 1800,
     ) -> tuple[WebSocketConnectionContext, tuple[WebSocketFrame, ...]]:
         """Authenticate handshake, acquire lease lock, and emit session.ready or state_sync."""
+        if self._is_draining:
+            raise ExternalAdapterFailureError(
+                f"WebSocket gateway node {self._node_id!r} is draining.",
+                code="WS_NODE_DRAINING",
+                retryable=True,
+                metadata={"node_id": self._node_id},
+            )
+
         principal = (
             self._auth.verify_raw_token(ticket_token)
             if ticket_token is not None
@@ -232,7 +284,6 @@ class WebSocketInterviewGateway:
         )
 
         existing = self._sessions.get(session_id)
-        is_reconnect = existing is not None or last_server_seq is not None
         if existing is not None and existing.tenant_id != principal.tenant_id:
             raise UnauthorizedTenantAccessError(
                 "Cross-tenant WebSocket session handshake forbidden.",
@@ -250,16 +301,53 @@ class WebSocketInterviewGateway:
             ttl_seconds=30,
         )
 
+        hydrated_data = (
+            self._cluster.session_hydrator_fn(principal.tenant_id, session_id)
+            if existing is None
+            and self._cluster is not None
+            and self._cluster.session_hydrator_fn is not None
+            else None
+        )
+        hydrated_turn = hydrated_data.get("turn_number", 1) if hydrated_data is not None else 1
+        hydrated_resumed = isinstance(hydrated_turn, int) and hydrated_turn > 1
+        is_reconnect = existing is not None or last_server_seq is not None or hydrated_resumed
+
         if existing is None:
-            state = _MutableSessionState(
-                session_id=session_id,
-                tenant_id=principal.tenant_id,
-                current_turn_number=1,
-                active_question=initial_question,
-                current_difficulty=current_difficulty,
-                checkpoint_version=checkpoint_version,
-                remaining_seconds=remaining_seconds,
-            )
+            if hydrated_data is not None:
+                raw_turn = hydrated_data.get("turn_number", 1)
+                h_turn = raw_turn if isinstance(raw_turn, int) else 1
+                raw_diff = hydrated_data.get("difficulty", int(current_difficulty))
+                h_diff_int = raw_diff if isinstance(raw_diff, int) else int(current_difficulty)
+                raw_tok = hydrated_data.get("tokens_consumed", 0)
+                h_tokens = raw_tok if isinstance(raw_tok, int) else 0
+                raw_rem = hydrated_data.get("remaining_seconds", remaining_seconds)
+                h_rem = raw_rem if isinstance(raw_rem, int) else remaining_seconds
+                h_q = str(hydrated_data.get("active_question") or initial_question)
+                h_ckpt = str(hydrated_data.get("checkpoint_version") or checkpoint_version)
+                h_done = bool(hydrated_data.get("is_completed", False))
+                state = _MutableSessionState(
+                    session_id=session_id,
+                    tenant_id=principal.tenant_id,
+                    current_turn_number=h_turn,
+                    active_question=h_q,
+                    current_difficulty=DifficultyLevel.from_int(h_diff_int),
+                    checkpoint_version=h_ckpt,
+                    remaining_seconds=h_rem,
+                    tokens_consumed=h_tokens,
+                    is_completed=h_done,
+                    server_seq=last_server_seq or 0,
+                )
+            else:
+                state = _MutableSessionState(
+                    session_id=session_id,
+                    tenant_id=principal.tenant_id,
+                    current_turn_number=1,
+                    active_question=initial_question,
+                    current_difficulty=current_difficulty,
+                    checkpoint_version=checkpoint_version,
+                    remaining_seconds=remaining_seconds,
+                    server_seq=last_server_seq or 0,
+                )
             self._sessions[session_id] = state
         else:
             state = existing
@@ -277,6 +365,13 @@ class WebSocketInterviewGateway:
         )
         self._connections[conn.connection_id] = conn
         self._active_conn_by_session[session_id] = conn.connection_id
+        if self._cluster is not None and self._cluster.subscribe_fn is not None:
+            self._cluster.subscribe_fn(
+                self._node_id,
+                principal.tenant_id,
+                session_id,
+                self.receive_backplane_message,
+            )
 
         trace_id = str(generate_uuid7())
         sync_payload: dict[str, object] = {
@@ -322,7 +417,101 @@ class WebSocketInterviewGateway:
             conn.barge_in.trigger_barge_in(reason="CONNECTION_DISCONNECTED")
         if self._active_conn_by_session.get(conn.session_id) == connection_id:
             del self._active_conn_by_session[conn.session_id]
+        if self._cluster is not None and self._cluster.unsubscribe_fn is not None:
+            self._cluster.unsubscribe_fn(self._node_id, conn.principal.tenant_id, conn.session_id)
         await self._lock_port.release(lease=conn.lease)
+
+    async def publish_cross_node_event(
+        self,
+        *,
+        tenant_id: TenantId,
+        session_id: UUID,
+        event_type: str,
+        payload: Mapping[str, object],
+        trace_id: str | None = None,
+    ) -> int:
+        """Broadcast an outbound WebSocket event onto the cross-node Pub/Sub backplane."""
+        if self._cluster is None or self._cluster.publish_fn is None:
+            return 0
+        return await self._cluster.publish_fn(
+            tenant_id,
+            session_id,
+            event_type,
+            payload,
+            self._node_id,
+            trace_id or str(generate_uuid7()),
+        )
+
+    async def receive_backplane_message(self, msg: object) -> None:
+        """Handle a cross-node Pub/Sub delivery targeting an active local socket session."""
+        raw_sid = getattr(msg, "session_id", None)
+        if not isinstance(raw_sid, UUID):
+            return
+        event_type = str(getattr(msg, "event_type", "backplane.event"))
+        payload = getattr(msg, "payload", {})
+        trace_id = str(getattr(msg, "trace_id", str(generate_uuid7())))
+        payload_map = payload if isinstance(payload, Mapping) else {}
+
+        if event_type == "control.force_evict_socket":
+            conn_id = self._active_conn_by_session.get(raw_sid)
+            if conn_id is not None:
+                await self.disconnect(conn_id)
+            return
+
+        state = self._sessions.get(raw_sid)
+        if state is None:
+            return
+        frame = self._emit(
+            state,
+            event_type=event_type,
+            payload=payload_map,
+            trace_id=trace_id,
+        )
+        self._backplane_inbox.setdefault(raw_sid, []).append(frame)
+
+    async def initiate_graceful_drain(
+        self, retry_after_ms: int = 250
+    ) -> tuple[WebSocketFrame, ...]:
+        """Drain node cleanly: block new upgrades, checkpoint, emit notice, release locks."""
+        self._is_draining = True
+        if self._cluster is not None and self._cluster.mark_draining_fn is not None:
+            self._cluster.mark_draining_fn(self._node_id, True)
+
+        notices: list[WebSocketFrame] = []
+        active_connections = list(self._connections.values())
+        for conn in active_connections:
+            if self._cluster is not None and self._cluster.checkpoint_flush_fn is not None:
+                self._cluster.checkpoint_flush_fn(conn.principal.tenant_id, conn.session_id)
+            state = self._sessions[conn.session_id]
+            notice_payload: dict[str, object] = {
+                "session_id": str(conn.session_id),
+                "drain_node_id": self._node_id,
+                "retry_after_ms": max(10, retry_after_ms),
+                "last_checkpoint_version": state.checkpoint_version,
+                "last_server_seq": state.server_seq + 1,
+                "turn_number": state.current_turn_number,
+                "active_question": state.active_question,
+                "fencing_token": conn.lease.fencing_token,
+            }
+            notice = self._emit(
+                state,
+                event_type="session.reconnect_notice",
+                payload=notice_payload,
+                trace_id=str(generate_uuid7()),
+            )
+            notices.append(notice)
+            if self._cluster is not None and self._cluster.publish_fn is not None:
+                await self._cluster.publish_fn(
+                    conn.principal.tenant_id,
+                    conn.session_id,
+                    "session.reconnect_notice",
+                    notice_payload,
+                    self._node_id,
+                    notice.trace_id,
+                )
+            await self.disconnect(conn.connection_id)
+
+        return tuple(notices)
 
     async def receive_frame(
         self,
