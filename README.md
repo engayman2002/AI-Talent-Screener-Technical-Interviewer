@@ -5,11 +5,21 @@
 ![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
 ![Phase 4](https://img.shields.io/badge/Phase%204-Complete-brightgreen)
 ![Phase 5](https://img.shields.io/badge/Phase%205-Complete-brightgreen)
+![Phase 6](https://img.shields.io/badge/Phase%206-Complete-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2B%20DDD-blue)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB)
 ![Typing](https://img.shields.io/badge/mypy--strict-passing-success)
 
 An enterprise **AI Talent Screener & Stateful Adaptive Technical Interviewer** engineered around **Clean Architecture**, **Hexagonal Ports & Adapters**, and **Strategic & Tactical Domain-Driven Design (DDD)**.
+
+### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
 
 ---
 
@@ -22,12 +32,40 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 3. **Phase 3 Document Intelligence & Hybrid Vector Infrastructure (`infrastructure/`, `composition_root/`):** Concrete Document Intelligence pipeline adapters wired via `build_phase3_container()` — malware/magic-byte virus scanner, zero-trust cryptographic PII vault (`ADR-008` with $O(1)$ GDPR crypto-shredding), tenant-scoped object storage, full-jitter retry & DLQ resilience, layout-aware PDF/DOCX/Text normalizer, anti-hallucination grounding verifier, LangChain structured extraction ACL, `ADR-004` Parent-Child hierarchical chunker, BM25 + dense vector encoders, and multi-tenant `HybridVectorSearchAdapter`.
 4. **Phase 4 Stateful Adaptive Interview Engine & Security Guardrails (`infrastructure/ai_adapters/langgraph_interview/`, `composition_root/`):** Production `ADR-005` 4-Plane LangGraph execution engine wired via `build_phase4_container()` — tenant-isolated `ADR-009` fenced state checkpointer, XML-delimited cognitive nodes (`QuestionGeneratorNode`, `EvaluationNode`, `SocraticFollowUpNode`, `ScoringVerificationNode`), piecewise P1–P6 `AdaptiveEdgeRouter`, `ADR-012` adversarial prompt-injection firewall, `ADR-013` sliding-window FinOps token budget enforcer, monotonic fencing distributed lock, and streaming STT/TTS audio ACLs.
 5. **Phase 5 Presentation API, RFC 9457 Governance, Priority Batch Orchestration & WebSocket Protocol (`presentation/`, `infrastructure/messaging/`):** Clean-Architecture delivery layer wired via `build_phase5_container()` featuring a 20-endpoint v1 REST API router, RFC 9457 `ProblemDetailsResponse` translator (`400`–`503`), HS256 Bearer JWT authentication & RBAC/cross-tenant middleware, SHA-256 `Idempotency-Key` replay, per-tenant HTTP rate limits, `ADR-006` `PriorityReservedTokenBucketLimiter` + `BatchIngestionWorkerCoordinator` (WFQ + Little's Law bounds), replayable `Last-Event-ID` SSE progress streams, and `ADR-007` full-duplex WebSocket gateway (`/v1/interviews/{session_id}/ws`) with adaptive silence thresholds ($T_{\text{silence}}$) and preemptive TTS barge-in cancellation.
-6. **Remaining Infrastructure & Frontend Layers (Upcoming Phases):** PostgreSQL relational Data Mappers & Transactional Outbox and Next.js App Router frontend workspace.
+6. **Phase 6 ACID Relational Persistence, Transactional Outbox, INT8 Quantization & Fenced Checkpointing (`infrastructure/persistence/`):** Production persistence stack wired via `build_phase6_container()` — dual SQLite WAL/PostgreSQL DDL schema (`SqlDatabaseManager`, 17 relational tables), bidirectional Domain Data Mappers with strict `tenant_id` isolation and Optimistic Concurrency Control (`version = version + 1`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows, `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`), `Int8ScalarQuantizer` + `QuantizedHybridVectorStoreBackend` (oversampled INT8 pre-filter + exact `float32` cosine rescoring), `TransactionalOutboxRelayWorker` + `CrossStoreAntiEntropyReconciler`, and `ADR-009` `TwoTierFencedStateCheckpointer` (TTL L1 cache + SHA-256-verified SQL L2 with monotonic fencing).
+7. **Remaining Frontend & Topology Layers (Upcoming Phases):** Next.js App Router frontend workspace and production deployment topology.
 
 ### Core Bounded Contexts
 
 | Bounded Context | Package Path | Key Tactical Building Blocks |
+| :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
 | :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- |
 | **Shared Kernel** | `domain/shared/` | `Entity[TId]`, `AggregateRoot[TId]`, `ValueObject`, `DomainEvent`, `DomainError`, `TenantId`, `SHA256Hash`, `VersionNumber`, `ConfidenceScore`, `NormalizedScore`, monotonic RFC 9562 `generate_uuid7` |
 | **Recruitment Management** | `domain/contexts/recruitment/` | `JobRequisition` (rubric locking & lifecycle state machine), `CompetencyCriterion`, `CompetencyWeightVector` ($\sum w_i = 1.0 \pm 10^{-6}$), `HardSkillGatekeeperSet`, `TierThresholdConfig` |
 | **Document Intelligence & Matching** | `domain/contexts/document_intelligence/` | `ScreeningBatch` (500-file quota, SHA-256 dedup, atomic counters), `CandidateProfile` (verbatim `source_quote` grounding, non-overlapping tenure union), `SemanticMatchResult`, `HybridMatchVector`, `RecencyDecayFactor`, `HybridMatchingDomainService` |
@@ -38,19 +76,73 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 ### Phase 2 Application Orchestration & Clean Architecture Governance
 
 | Module | Package Path | Implemented Use Cases, Handlers & Contracts |
+| :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
 | :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- |
 | **Common Primitives** | `application/common/` | `ApplicationError` hierarchy (`ResourceNotFoundError`, `ResourceConflictError`, `IdempotencyConflictError`, `UnauthorizedTenantAccessError`, `QuotaExceededError`, `ExternalAdapterFailureError`, `GuardrailViolationError`), `UseCasePort`, `QueryUseCasePort`, `TransactionalUnitOfWorkPort`, `DomainEventBusPort`, `IdempotencyStorePort`, `DistributedLockPort`, `ObjectStoragePort`, `VirusScannerPort`, `PiiVaultPort`, `TaskQueueDispatcherPort`, `RealtimeProgressPublisherPort`, `ObservabilityTracerPort` |
 | **Recruitment Management** | `application/recruitment/` | `CreateJobRequisitionUseCase`, `PublishJobRequisitionUseCase`, `UpdateJobRubricUseCase`, `LockJobRequisitionRubricUseCase`, `ArchiveJobRequisitionUseCase`, `GetJobRequisitionUseCase`, `LockRubricOnBatchOrInterviewStartedHandler` |
 | **Document Intelligence** | `application/document_intelligence/` | `InitiateScreeningBatchUseCase`, `ProcessDocumentIngestionTaskUseCase`, `ExecuteHybridMatchingUseCase`, `GetScreeningBatchStatusUseCase`, `CandidateProfileReadModelPort`, `DocumentParserPort`, `HybridVectorSearchPort` |
 | **Live Adaptive Interview** | `application/live_interview/` | `InitializeInterviewSessionUseCase`, `ProcessCandidateTurnUseCase`, `RecordClientTelemetryUseCase`, `TerminateInterviewEarlyUseCase`, `CompleteInterviewSessionUseCase`, `AudioSttPort`, `AudioTtsPort`, `PromptGuardrailPort`, `TokenBudgetEnforcerPort`, `AdaptiveInterviewGraphPort` |
 | **Evaluation & Analytics** | `application/evaluation_analytics/` | `GenerateEvaluationReportUseCase`, `RecordRecruiterOverrideUseCase`, `BuildCandidateComparisonMatrixUseCase`, `TriggerEvaluationReportOnInterviewCompletedHandler` |
 | **Identity & Governance** | `application/identity_governance/` | `ProvisionTenantAccountUseCase`, `RecordCandidateConsentUseCase`, `RevokeCandidateConsentUseCase`, `ExecuteCandidateErasureUseCase` |
-| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `Phase3PipelineBundle`, `Phase4PipelineBundle`, `Phase5PipelineBundle`, `build_phase3_container`, `build_phase4_container`, `build_phase5_container` |
+| **Composition Root** | `composition_root/` | `ApplicationContainer`, `RepositoryRegistry`, `ExternalAdapterRegistry`, `ApplicationContainerPort`, `Phase3PipelineBundle`, `Phase4PipelineBundle`, `Phase5PipelineBundle`, `Phase6PipelineBundle`, `build_phase3_container`, `build_phase4_container`, `build_phase5_container`, `build_phase6_container`, `build_sql_repositories` |
 
 ### Phase 3 Document Intelligence, PII Vault & Hybrid Vector Adapters (`infrastructure/`)
 
 | Subsystem | Package Path | Implemented Adapters, ACLs & Protocols |
+| :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
 | :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- |
 | **Security & PII Vault (`ADR-008`)** | `infrastructure/security/` | `SignatureAndHeuristicVirusScannerAdapter` (PDF/DOCX/UTF-8 magic bytes, EICAR, VBA macro, Zip Slip/bomb guards), `CryptographicPiiVaultAdapter`, `StdlibHmacCtrEnvelopeCipher`, `EnvelopeCipherProtocol` ($O(1)$ `crypto_shred`) |
 | **Object Storage & Vector Backend** | `infrastructure/persistence/` | `TenantScopedObjectStorageAdapter` (`{tenant_id}/{batch_id}/{sha256}`, signed presigned URLs), `InMemoryHybridVectorStoreBackend`, `VectorStoreBackendProtocol`, `InMemoryIdempotencyStore`, `InMemoryDistributedLock` |
 | **Resilience & DLQ Messaging** | `infrastructure/messaging/` | `ExponentialBackoffRetryPolicy` ($T_{\text{sleep}}(k) = \text{Uniform}(0, \min(T_{\max}, T_{\text{base}} \cdot 2^k))$), `classify_failure`, `CircuitBreaker`, `ResilientTaskExecutor`, `InMemoryDeadLetterQueue` (`DeadLetterQueuePort`) |
@@ -60,7 +152,34 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 ### Phase 4 Stateful Adaptive Interview Engine, Security Guardrails & Audio ACLs (`infrastructure/`)
 
 | Subsystem | Package Path | Implemented Adapters, Nodes & Protocols |
+| :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
 | :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- |
 | **4-Plane LangGraph State & Checkpointer (`ADR-005`, `ADR-009`)** | `infrastructure/ai_adapters/langgraph_interview/` | `SessionMetadataPlane`, `RubricContextPlane`, `AdaptiveRoutingPlane`, `DialogueLedgerPlane`, `InterviewGraphState`, idempotent `StateReducer` (bounded `recent_dialogue_window`), `InterviewStateCheckpointerProtocol`, `InMemoryFencedStateCheckpointer` |
 | **Cognitive Nodes & Routing Engine** | `infrastructure/ai_adapters/langgraph_interview/` | `QuestionGeneratorNode` (`PromptHash` dedup), `EvaluationNode` (`<untrusted_candidate_response>` XML boundary isolation & stylometric risk), `SocraticFollowUpNode`, `ScoringVerificationNode`, `AdaptiveEdgeRouter` (P1–P6 rules), `LangGraphAdaptiveInterviewAdapter` |
 | **Adversarial Prompt Guardrail (`ADR-012`)** | `infrastructure/security/prompt_guardrail.py` | `AdversarialPromptGuardrailAdapter` ($\mathcal{R}_{\text{adv}}$ risk bands, Unicode/NFKC & zero-width smuggling neutralization, Base64/Hex encoded attack decoding, delimiter & instruction-override blocking) |
@@ -70,11 +189,47 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 ### Phase 5 Presentation API Catalog, Streaming Workers & WebSocket Protocol (`presentation/`, `infrastructure/messaging/`)
 
 | Subsystem | Package Path | Implemented Routers, Middleware, Brokers & Gateways |
+| :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
 | :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- | :### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
+
+--- |
 | **RESTful API Catalog & Envelopes** | `presentation/rest/`, `presentation/schemas/` | `RestApiRouter` (20 v1 endpoints across all 5 Bounded Contexts), `RecruitmentController`, `DocumentIntelligenceController`, `LiveInterviewController`, `EvaluationController`, `IdentityController`, `ApiResponseEnvelope[T]`, `ProblemDetailsResponse` (RFC 9457) |
 | **Security, Idempotency & Error Middleware** | `presentation/middleware/`, `presentation/exceptions.py` | `BearerTokenAuthenticator` (HS256 HMAC-SHA256 JWT, RBAC scopes, cross-tenant `403`), `ExceptionToProblemDetailsTranslator` (`400`, `401`, `403`, `404`, `405`, `409`, `422`, `429`, `502`, `503`), `IdempotencyMiddleware` (`Idempotency-Key` + SHA-256 fingerprint), `TenantRateLimiter` (`X-RateLimit-*`, `Retry-After`) |
 | **Priority Token Bucket, WFQ Worker & SSE (`ADR-006`)** | `infrastructure/messaging/` | `PriorityReservedTokenBucketLimiter` (`CRITICAL_INTERVIEW`, `INTERACTIVE_MATCHING`, `BULK_INGESTION` reserve floors), `BatchIngestionWorkerCoordinator` (WFQ tenant fair-queuing, Little's Law semaphore, `ResilientTaskExecutor`), `ReplayableSseProgressBroker` (`Last-Event-ID` ring-buffer replay) |
 | **Full-Duplex WebSocket Gateway (`ADR-007`)** | `presentation/websocket/` | `WebSocketInterviewGateway` (`/v1/interviews/{session_id}/ws`, `session.ready`, `session.state_sync` reconnect recovery, `audio.chunk`, `candidate.utterance`, `candidate.barge_in`, `telemetry.snapshot`), `compute_adaptive_silence_threshold_ms` ($T_{\text{silence}}$), `BargeInStreamController` (`tts.flush_interrupt`) |
+
+### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
 
 ---
 
@@ -105,7 +260,21 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - All 20 REST endpoints across Recruitment, Document Intelligence, Live Interview, Evaluation, and Identity Governance guarded by HS256 JWT auth, RBAC scopes, cross-tenant `403` isolation, SHA-256 idempotency replay/conflict detection, and per-tenant HTTP rate limits
   - `ADR-006` `PriorityReservedTokenBucketLimiter`, `BatchIngestionWorkerCoordinator` (WFQ + Little's Law concurrency), and `ReplayableSseProgressBroker` supporting `Last-Event-ID` resumption
   - `ADR-007` `WebSocketInterviewGateway` with reconnection delta recovery (`session.state_sync`), adaptive end-of-turn silence ($T_{\text{silence}}$), and preemptive `BargeInStreamController` TTS cancellation wired via `build_phase5_container()`
-- [ ] **Phase 6:** PostgreSQL Relational Data Mappers, Transactional Outbox & Next.js Frontend Workspace
+- [x] **Phase 6: Relational Persistence Engine, Data Mappers, Transactional Outbox, INT8 Vector Store & Two-Tier Fenced Checkpointer** — **Complete**
+  - Dual PostgreSQL/SQLite DDL schema (17 relational tables) executed on ACID WAL-enabled `SqlDatabaseManager`
+  - All 8 `Sql*Repository` adapters + CQRS `CandidateProfileReadModelPort`, `SqlIdempotencyStoreAdapter`, and SQL-backed `SqlCandidatePiiVaultStore` (`ADR-008`) enforcing strict `tenant_id` isolation and Optimistic Concurrency Control (`OPTIMISTIC_CONCURRENCY_CONFLICT`)
+  - `SqlTransactionalUnitOfWork` atomically committing aggregate mutations and `transactional_outbox` events, relayed asynchronously by `TransactionalOutboxRelayWorker` with DLQ protection
+  - `Int8ScalarQuantizer` + `QuantizedHybridVectorStoreBackend` (versioned `sync_version` writes, oversampled INT8 pre-filter + `float32` rescoring), `CrossStoreAntiEntropyReconciler` (healing missing/stale/orphan/erasure drift), and `TwoTierFencedStateCheckpointer` (L1 cache + SHA-256-verified SQL L2 + monotonic fencing) wired via `build_phase6_container()`
+- [ ] **Phase 7:** Frontend Clean Architecture & Next.js App Router Workspace
+
+### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
 
 ---
 
@@ -119,6 +288,15 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
 6. [Phase 6: Persistence Architecture, Data Governance & State Checkpointing](docs/architecture/phase_6_persistence_architecture_data_governance_and_state_checkpointing.md)
 7. [Phase 7: Frontend Clean Architecture, State Synchronization & UX Flows](docs/architecture/phase_7_frontend_clean_architecture_state_synchronization_and_ux_flows.md)
 8. [Phase 8: AI Security, Guardrails, Observability & Production Topology](docs/architecture/phase_8_ai_security_guardrails_observability_and_production_topology.md)
+
+### Phase 6 Persistence Engine, Transactional Outbox, INT8 Vector Quantization & Checkpointing (`infrastructure/persistence/`)
+
+| Subsystem | Package Path | Implemented Repositories, Outbox, Quantizer & Checkpointer |
+| :--- | :--- | :--- |
+| **Relational Schema & Data Mappers** | `infrastructure/persistence/relational/` | `SqlDialect` (`SQLITE`/`POSTGRESQL` DDL across 17 tables), `SqlDatabaseManager` (WAL mode & foreign keys), lossless bidirectional mappers (`row_to_*`, `*_to_rows`), `SqlIdempotencyStoreAdapter`, `SqlCandidatePiiVaultStore` (`ADR-008`) |
+| **ACID Repositories, OCC & Outbox UoW** | `infrastructure/persistence/relational/` | All 8 `Sql*Repository` implementations + `CandidateProfileReadModelPort` enforcing `tenant_id` scoping & `version = version + 1` OCC (`OPTIMISTIC_CONCURRENCY_CONFLICT`), `SqlTransactionalUnitOfWork` atomically writing `transactional_outbox` rows via `OutboxEventCodec` |
+| **INT8 Quantization & Anti-Entropy Sync** | `infrastructure/persistence/vector_store/` | `Int8ScalarQuantizer` (4x memory reduction, oversampled $k_{\text{oversample}}$ + `float32` rescoring), `QuantizedHybridVectorStoreBackend` (`sync_version` monotonicity), `TransactionalOutboxRelayWorker` (retry + DLQ), `CrossStoreAntiEntropyReconciler` |
+| **Two-Tier Fenced Checkpointer (`ADR-009`)** | `infrastructure/persistence/checkpointing/` | `TwoTierFencedStateCheckpointer` (TTL L1 hot cache + L2 durable `interview_state_checkpoints`, SHA-256 `InterviewStateSerializer` tamper detection, monotonic fencing rejection `STALE_FENCING_TOKEN`) |
 
 ---
 

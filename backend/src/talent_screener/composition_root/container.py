@@ -120,6 +120,8 @@ from talent_screener.infrastructure.messaging import (
 )
 from talent_screener.infrastructure.observability import InMemoryObservabilityTracer
 from talent_screener.infrastructure.persistence import (
+    CrossStoreAntiEntropyReconciler,
+    DatabaseConnectionConfig,
     InMemoryCandidateProfileRepository,
     InMemoryConsentRecordRepository,
     InMemoryEvaluationReportRepository,
@@ -131,7 +133,22 @@ from talent_screener.infrastructure.persistence import (
     InMemorySemanticMatchResultRepository,
     InMemoryTenantAccountRepository,
     InMemoryUnitOfWork,
+    QuantizedHybridVectorStoreBackend,
+    SqlCandidatePiiVaultStore,
+    SqlCandidateProfileRepository,
+    SqlConsentRecordRepository,
+    SqlDatabaseManager,
+    SqlEvaluationReportRepository,
+    SqlIdempotencyStoreAdapter,
+    SqlInterviewSessionRepository,
+    SqlJobRequisitionRepository,
+    SqlScreeningBatchRepository,
+    SqlSemanticMatchResultRepository,
+    SqlTenantAccountRepository,
+    SqlTransactionalUnitOfWork,
     TenantScopedObjectStorageAdapter,
+    TransactionalOutboxRelayWorker,
+    TwoTierFencedStateCheckpointer,
     VectorStoreBackendProtocol,
 )
 from talent_screener.infrastructure.security import (
@@ -206,6 +223,20 @@ def build_in_memory_repositories() -> RepositoryRegistry:
     )
 
 
+def build_sql_repositories(db: SqlDatabaseManager) -> RepositoryRegistry:
+    """Construct ACID SQL-backed repository implementations sharing ``db``."""
+    return RepositoryRegistry(
+        requisition_repo=SqlJobRequisitionRepository(db),
+        batch_repo=SqlScreeningBatchRepository(db),
+        profile_repo=SqlCandidateProfileRepository(db),
+        match_repo=SqlSemanticMatchResultRepository(db),
+        session_repo=SqlInterviewSessionRepository(db),
+        report_repo=SqlEvaluationReportRepository(db),
+        tenant_repo=SqlTenantAccountRepository(db),
+        consent_repo=SqlConsentRecordRepository(db),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Phase3PipelineBundle:
     """Bundled DI container plus Phase 3 concrete adapters and DLQ executor."""
@@ -246,15 +277,24 @@ def build_phase4_external_adapters(
     stt_driver: SttDriverProtocol | None = None,
     tts_driver: TtsDriverProtocol | None = None,
     max_tokens_per_window: int | None = None,
+    idempotency_store: IdempotencyStorePort | None = None,
+    pii_vault: PiiVaultPort | None = None,
 ) -> ExternalAdapterRegistry:
     """Wire concrete Phase 3 & Phase 4 Document, Security, Vector, and LangGraph adapters."""
     object_storage = TenantScopedObjectStorageAdapter()
     virus_scanner = SignatureAndHeuristicVirusScannerAdapter()
-    pii_vault = CryptographicPiiVaultAdapter(cipher=cipher, master_kek=master_kek)
+    resolved_pii_vault: PiiVaultPort = (
+        pii_vault
+        if pii_vault is not None
+        else CryptographicPiiVaultAdapter(cipher=cipher, master_kek=master_kek)
+    )
+    resolved_idempotency: IdempotencyStorePort = (
+        idempotency_store if idempotency_store is not None else InMemoryIdempotencyStore()
+    )
     tracer = InMemoryObservabilityTracer()
     document_parser = LangChainDocumentParserAdapter(
         object_storage=object_storage,
-        pii_vault=pii_vault,
+        pii_vault=resolved_pii_vault,
         llm_client=llm_client,
         tracer=tracer,
         grounding_threshold=grounding_threshold,
@@ -274,11 +314,11 @@ def build_phase4_external_adapters(
         synthesis_model=synthesis_model,
     )
     return ExternalAdapterRegistry(
-        idempotency_store=InMemoryIdempotencyStore(),
+        idempotency_store=resolved_idempotency,
         distributed_lock=FencingTokenDistributedLockAdapter(),
         object_storage=object_storage,
         virus_scanner=virus_scanner,
-        pii_vault=pii_vault,
+        pii_vault=resolved_pii_vault,
         task_dispatcher=InMemoryTaskQueueDispatcher(),
         progress_publisher=ReplayableSseProgressBroker(),
         observability_tracer=tracer,
@@ -417,56 +457,58 @@ class Phase5PipelineBundle:
     ws_gateway: WebSocketInterviewGateway
 
 
-def build_phase5_container(
-    *,
-    llm_client: StructuredExtractionRunnableProtocol | None = None,
-    embedding_client: DenseEmbeddingClientProtocol | None = None,
-    vector_backend: VectorStoreBackendProtocol | None = None,
-    cipher: EnvelopeCipherProtocol | None = None,
-    master_kek: bytes | None = None,
-    grounding_threshold: float = 0.85,
-    checkpointer: InterviewStateCheckpointerProtocol | None = None,
-    question_model: QuestionGenerationModelProtocol | None = None,
-    evaluation_model: TurnEvaluationModelProtocol | None = None,
-    socratic_model: SocraticProbeModelProtocol | None = None,
-    synthesis_model: InterviewSynthesisModelProtocol | None = None,
-    stt_driver: SttDriverProtocol | None = None,
-    tts_driver: TtsDriverProtocol | None = None,
-    max_tokens_per_window: int | None = None,
-    jwt_signing_key: bytes | None = None,
-    rate_limit_default_per_minute: int = 300,
-    bucket_rate_limits: Mapping[str, int] | None = None,
-    bucket_total_capacity: int = 100_000,
-    bucket_interview_reserve: int = 20_000,
-    bucket_matching_reserve: int = 15_000,
-    bucket_refill_tokens_per_second: float = 5_000.0,
-    clock_fn: Callable[[], float] | None = None,
-) -> Phase5PipelineBundle:
-    """Assemble full ApplicationContainer plus Phase 5 REST, SSE, WS, Middleware & Workers."""
-    adapters = build_phase4_external_adapters(
-        llm_client=llm_client,
-        embedding_client=embedding_client,
-        vector_backend=vector_backend,
-        cipher=cipher,
-        master_kek=master_kek,
-        grounding_threshold=grounding_threshold,
-        checkpointer=checkpointer,
-        question_model=question_model,
-        evaluation_model=evaluation_model,
-        socratic_model=socratic_model,
-        synthesis_model=synthesis_model,
-        stt_driver=stt_driver,
-        tts_driver=tts_driver,
-        max_tokens_per_window=max_tokens_per_window,
-    )
-    container = ApplicationContainer(adapters=adapters)
-    dlq = InMemoryDeadLetterQueue()
-    executor = ResilientTaskExecutor(dlq=dlq)
+@dataclass(frozen=True, slots=True)
+class Phase6PipelineBundle:
+    """Bundled DI container plus Phase 6 SQL Persistence, Outbox, Reconciler & Checkpointer."""
 
-    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
-    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
-    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
-    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    db_manager: SqlDatabaseManager
+    container: ApplicationContainer
+    repositories: RepositoryRegistry
+    adapters: ExternalAdapterRegistry
+    uow: SqlTransactionalUnitOfWork
+    event_bus: InMemoryDomainEventBus
+    dlq: InMemoryDeadLetterQueue
+    resilient_executor: ResilientTaskExecutor
+    idempotency_store: SqlIdempotencyStoreAdapter
+    pii_vault: SqlCandidatePiiVaultStore
+    quantized_vector_backend: QuantizedHybridVectorStoreBackend
+    outbox_relay: TransactionalOutboxRelayWorker
+    reconciler: CrossStoreAntiEntropyReconciler
+    checkpointer: TwoTierFencedStateCheckpointer
+    interview_graph: LangGraphAdaptiveInterviewAdapter
+    guardrail: AdversarialPromptGuardrailAdapter
+    token_budget_enforcer: SlidingWindowTokenBudgetEnforcerAdapter
+    distributed_lock: FencingTokenDistributedLockAdapter
+    sse_broker: ReplayableSseProgressBroker
+    priority_limiter: PriorityReservedTokenBucketLimiter
+    batch_coordinator: BatchIngestionWorkerCoordinator
+    authenticator: BearerTokenAuthenticator
+    rate_limiter: TenantRateLimiter
+    rest_router: RestApiRouter
+    ws_gateway: WebSocketInterviewGateway
+
+
+def _build_presentation_and_workers(
+    *,
+    container: ApplicationContainer,
+    adapters: ExternalAdapterRegistry,
+    executor: ResilientTaskExecutor,
+    jwt_signing_key: bytes | None,
+    rate_limit_default_per_minute: int,
+    bucket_rate_limits: Mapping[str, int] | None,
+    bucket_total_capacity: int,
+    bucket_interview_reserve: int,
+    bucket_matching_reserve: int,
+    bucket_refill_tokens_per_second: float,
+    clock_fn: Callable[[], float] | None,
+) -> tuple[
+    PriorityReservedTokenBucketLimiter,
+    BatchIngestionWorkerCoordinator,
+    BearerTokenAuthenticator,
+    TenantRateLimiter,
+    RestApiRouter,
+    WebSocketInterviewGateway,
+]:
     assert isinstance(adapters.progress_publisher, ReplayableSseProgressBroker)
     assert isinstance(adapters.task_dispatcher, InMemoryTaskQueueDispatcher)
 
@@ -541,12 +583,249 @@ def build_phase5_container(
         tts_port=adapters.audio_tts,
         error_translator=error_translator,
     )
+    return (
+        priority_limiter,
+        batch_coordinator,
+        authenticator,
+        rate_limiter,
+        rest_router,
+        ws_gateway,
+    )
+
+
+def build_phase5_container(
+    *,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    vector_backend: VectorStoreBackendProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+    checkpointer: InterviewStateCheckpointerProtocol | None = None,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
+    jwt_signing_key: bytes | None = None,
+    rate_limit_default_per_minute: int = 300,
+    bucket_rate_limits: Mapping[str, int] | None = None,
+    bucket_total_capacity: int = 100_000,
+    bucket_interview_reserve: int = 20_000,
+    bucket_matching_reserve: int = 15_000,
+    bucket_refill_tokens_per_second: float = 5_000.0,
+    clock_fn: Callable[[], float] | None = None,
+) -> Phase5PipelineBundle:
+    """Assemble full ApplicationContainer plus Phase 5 REST, SSE, WS, Middleware & Workers."""
+    adapters = build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=vector_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+        stt_driver=stt_driver,
+        tts_driver=tts_driver,
+        max_tokens_per_window=max_tokens_per_window,
+    )
+    container = ApplicationContainer(adapters=adapters)
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+
+    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
+    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
+    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
+    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    assert isinstance(adapters.progress_publisher, ReplayableSseProgressBroker)
+
+    (
+        priority_limiter,
+        batch_coordinator,
+        authenticator,
+        rate_limiter,
+        rest_router,
+        ws_gateway,
+    ) = _build_presentation_and_workers(
+        container=container,
+        adapters=adapters,
+        executor=executor,
+        jwt_signing_key=jwt_signing_key,
+        rate_limit_default_per_minute=rate_limit_default_per_minute,
+        bucket_rate_limits=bucket_rate_limits,
+        bucket_total_capacity=bucket_total_capacity,
+        bucket_interview_reserve=bucket_interview_reserve,
+        bucket_matching_reserve=bucket_matching_reserve,
+        bucket_refill_tokens_per_second=bucket_refill_tokens_per_second,
+        clock_fn=clock_fn,
+    )
 
     return Phase5PipelineBundle(
         container=container,
         adapters=adapters,
         dlq=dlq,
         resilient_executor=executor,
+        interview_graph=adapters.adaptive_interview_graph,
+        guardrail=adapters.prompt_guardrail,
+        token_budget_enforcer=adapters.token_budget_enforcer,
+        distributed_lock=adapters.distributed_lock,
+        sse_broker=adapters.progress_publisher,
+        priority_limiter=priority_limiter,
+        batch_coordinator=batch_coordinator,
+        authenticator=authenticator,
+        rate_limiter=rate_limiter,
+        rest_router=rest_router,
+        ws_gateway=ws_gateway,
+    )
+
+
+def build_phase6_container(
+    *,
+    dsn: str = ":memory:",
+    db_manager: SqlDatabaseManager | None = None,
+    enable_wal: bool = True,
+    l1_ttl_seconds: float = 300.0,
+    dispatch_to_event_bus_on_commit: bool = True,
+    relay_to_event_bus: bool = False,
+    llm_client: StructuredExtractionRunnableProtocol | None = None,
+    embedding_client: DenseEmbeddingClientProtocol | None = None,
+    cipher: EnvelopeCipherProtocol | None = None,
+    master_kek: bytes | None = None,
+    grounding_threshold: float = 0.85,
+    question_model: QuestionGenerationModelProtocol | None = None,
+    evaluation_model: TurnEvaluationModelProtocol | None = None,
+    socratic_model: SocraticProbeModelProtocol | None = None,
+    synthesis_model: InterviewSynthesisModelProtocol | None = None,
+    stt_driver: SttDriverProtocol | None = None,
+    tts_driver: TtsDriverProtocol | None = None,
+    max_tokens_per_window: int | None = None,
+    jwt_signing_key: bytes | None = None,
+    rate_limit_default_per_minute: int = 300,
+    bucket_rate_limits: Mapping[str, int] | None = None,
+    bucket_total_capacity: int = 100_000,
+    bucket_interview_reserve: int = 20_000,
+    bucket_matching_reserve: int = 15_000,
+    bucket_refill_tokens_per_second: float = 5_000.0,
+    clock_fn: Callable[[], float] | None = None,
+) -> Phase6PipelineBundle:
+    """Assemble full ACID Phase 6 SQL Persistence, Outbox, Quantized Vector & Fenced Stack."""
+    db = (
+        db_manager
+        if db_manager is not None
+        else SqlDatabaseManager(DatabaseConnectionConfig(dsn=dsn, enable_wal=enable_wal))
+    )
+    repositories = build_sql_repositories(db)
+    event_bus = InMemoryDomainEventBus()
+    uow = SqlTransactionalUnitOfWork(
+        db=db,
+        event_bus=event_bus,
+        dispatch_to_event_bus_on_commit=dispatch_to_event_bus_on_commit,
+    )
+    idempotency_store = SqlIdempotencyStoreAdapter(db)
+    pii_vault = SqlCandidatePiiVaultStore(db, cipher=cipher, master_kek=master_kek)
+    quantized_backend = QuantizedHybridVectorStoreBackend(db=db)
+    checkpointer = TwoTierFencedStateCheckpointer(
+        db=db,
+        l1_ttl_seconds=l1_ttl_seconds,
+    )
+
+    adapters = build_phase4_external_adapters(
+        llm_client=llm_client,
+        embedding_client=embedding_client,
+        vector_backend=quantized_backend,
+        cipher=cipher,
+        master_kek=master_kek,
+        grounding_threshold=grounding_threshold,
+        checkpointer=checkpointer,
+        question_model=question_model,
+        evaluation_model=evaluation_model,
+        socratic_model=socratic_model,
+        synthesis_model=synthesis_model,
+        stt_driver=stt_driver,
+        tts_driver=tts_driver,
+        max_tokens_per_window=max_tokens_per_window,
+        idempotency_store=idempotency_store,
+        pii_vault=pii_vault,
+    )
+    container = ApplicationContainer(
+        adapters=adapters,
+        repositories=repositories,
+        event_bus=event_bus,
+        uow=uow,
+    )
+    dlq = InMemoryDeadLetterQueue()
+    executor = ResilientTaskExecutor(dlq=dlq)
+
+    assert isinstance(repositories.profile_repo, SqlCandidateProfileRepository)
+    assert isinstance(repositories.consent_repo, SqlConsentRecordRepository)
+
+    outbox_relay = TransactionalOutboxRelayWorker(
+        db=db,
+        profile_repo=repositories.profile_repo,
+        vector_search=adapters.hybrid_vector_search,
+        vector_backend=quantized_backend,
+        pii_vault=pii_vault,
+        event_bus=event_bus,
+        dlq=dlq,
+        relay_to_event_bus=relay_to_event_bus,
+    )
+    reconciler = CrossStoreAntiEntropyReconciler(
+        db=db,
+        profile_repo=repositories.profile_repo,
+        consent_repo=repositories.consent_repo,
+        vector_backend=quantized_backend,
+        vector_search=adapters.hybrid_vector_search,
+        pii_vault=pii_vault,
+    )
+
+    assert isinstance(adapters.adaptive_interview_graph, LangGraphAdaptiveInterviewAdapter)
+    assert isinstance(adapters.prompt_guardrail, AdversarialPromptGuardrailAdapter)
+    assert isinstance(adapters.token_budget_enforcer, SlidingWindowTokenBudgetEnforcerAdapter)
+    assert isinstance(adapters.distributed_lock, FencingTokenDistributedLockAdapter)
+    assert isinstance(adapters.progress_publisher, ReplayableSseProgressBroker)
+
+    (
+        priority_limiter,
+        batch_coordinator,
+        authenticator,
+        rate_limiter,
+        rest_router,
+        ws_gateway,
+    ) = _build_presentation_and_workers(
+        container=container,
+        adapters=adapters,
+        executor=executor,
+        jwt_signing_key=jwt_signing_key,
+        rate_limit_default_per_minute=rate_limit_default_per_minute,
+        bucket_rate_limits=bucket_rate_limits,
+        bucket_total_capacity=bucket_total_capacity,
+        bucket_interview_reserve=bucket_interview_reserve,
+        bucket_matching_reserve=bucket_matching_reserve,
+        bucket_refill_tokens_per_second=bucket_refill_tokens_per_second,
+        clock_fn=clock_fn,
+    )
+
+    return Phase6PipelineBundle(
+        db_manager=db,
+        container=container,
+        repositories=repositories,
+        adapters=adapters,
+        uow=uow,
+        event_bus=event_bus,
+        dlq=dlq,
+        resilient_executor=executor,
+        idempotency_store=idempotency_store,
+        pii_vault=pii_vault,
+        quantized_vector_backend=quantized_backend,
+        outbox_relay=outbox_relay,
+        reconciler=reconciler,
+        checkpointer=checkpointer,
         interview_graph=adapters.adaptive_interview_graph,
         guardrail=adapters.prompt_guardrail,
         token_budget_enforcer=adapters.token_budget_enforcer,
