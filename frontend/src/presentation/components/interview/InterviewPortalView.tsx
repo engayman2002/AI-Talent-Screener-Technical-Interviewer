@@ -155,12 +155,11 @@ export function InterviewPortalView({
   const badgeClass = STATE_BADGE_CLASS[snapshot.state] ?? "badge badge-neutral";
 
   return (
-    <div className="space-y-6">
-      {/* Header Control Bar */}
+    <div className="panel-stack">
       <header className="panel card-header-row">
         <div>
           <p className="eyebrow">Candidate Live Adaptive Interview Portal (ADR-010)</p>
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="page-title-row">
             <h1 className="page-title">Session {formatShortUuid(sessionId)}</h1>
             <span className={badgeClass} data-testid="fsm-state-badge">
               {snapshot.state}
@@ -176,7 +175,6 @@ export function InterviewPortalView({
         </div>
       </header>
 
-      {/* Primary Action Toolbar + Collapsible Connection Form */}
       <section className="panel" aria-label="Session Controls">
         <div className="section-row">
           <div className="button-row">
@@ -233,7 +231,7 @@ export function InterviewPortalView({
 
         {showAdvancedConn && (
           <form
-            className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-800 pt-4 md:grid-cols-3"
+            className="form-grid-3 compact-top"
             onSubmit={(e) => void handleStart(e)}
           >
             <label className="field-group">
@@ -283,18 +281,13 @@ export function InterviewPortalView({
         )}
       </section>
 
-      {/* Split-Pane Main Workspace (2/3 Conversation & Composer, 1/3 Telemetry Sidebar) */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left Main Pane */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* Active Question Card */}
+      <div className="interview-split-grid">
+        <div className="interview-main-col">
           <section className="panel" aria-label="Active Question & Transcript">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="section-row">
               <div>
                 <p className="eyebrow">Active Adaptive Prompt</p>
-                <h2 className="text-base font-semibold text-slate-100">
-                  Interviewer Question &amp; Live Captions
-                </h2>
+                <h2 className="section-title">Interviewer Question &amp; Live Captions</h2>
               </div>
               <div className="badge-row">
                 <span className="badge badge-info">Target L{snapshot.difficulty}</span>
@@ -304,14 +297,14 @@ export function InterviewPortalView({
 
             <div className="question-box">
               {displayedQuestion.length > 0 ? (
-                <p className="text-sm leading-relaxed text-slate-100">{displayedQuestion}</p>
+                <p>{displayedQuestion}</p>
               ) : (
                 <p className="muted">
                   Waiting for session handshake and opening competency prompt...
                 </p>
               )}
               {snapshot.state === "IDLE" && displayedQuestion.length > 0 && (
-                <p className="mt-2 text-[11px] font-medium text-sky-400">
+                <p className="helper-hint">
                   Preview loaded from Turn 1 SQL checkpoint — click &ldquo;Connect Interview
                   Socket&rdquo; above to start live interactive streaming.
                 </p>
@@ -321,7 +314,7 @@ export function InterviewPortalView({
             {snapshot.partialTranscript.length > 0 && (
               <div className="caption-box" aria-live="polite">
                 <span className="eyebrow">Live Partial STT Transcript</span>
-                <p className="text-sm text-slate-200">{snapshot.partialTranscript}</p>
+                <p>{snapshot.partialTranscript}</p>
               </div>
             )}
 
@@ -337,8 +330,8 @@ export function InterviewPortalView({
                     key={`${entry.role}-${entry.turnNumber}-${idx}`}
                     className={`ledger-item ${
                       entry.role === "INTERVIEWER"
-                        ? "border-l-4 border-l-sky-500"
-                        : "border-l-4 border-l-emerald-500"
+                        ? "ledger-item--interviewer"
+                        : "ledger-item--candidate"
                     }`}
                   >
                     <div className="ledger-meta">
@@ -357,21 +350,18 @@ export function InterviewPortalView({
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-slate-200">{entry.text}</p>
+                    <p>{entry.text}</p>
                   </li>
                 ))}
               </ul>
             )}
           </section>
 
-          {/* Rich Technical Response Composer */}
           <section className="panel" aria-label="Candidate Response Composer">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="section-row">
               <div>
                 <p className="eyebrow">Technical Turn Input</p>
-                <h2 className="text-base font-semibold text-slate-100">
-                  Response Composer &amp; Architecture Scratchpad
-                </h2>
+                <h2 className="section-title">Response Composer &amp; Architecture Scratchpad</h2>
               </div>
               <div className="button-row">
                 <button
@@ -409,8 +399,8 @@ export function InterviewPortalView({
               placeholder="Explain architectural mechanisms, backpressure tradeoffs, p99 latency bounds, or SQL/Python snippets..."
             />
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="muted font-mono text-xs">
+            <div className="composer-footer">
+              <span className="muted mono-code">
                 {wordCount} words · {charCount} chars · Shortcut: Ctrl/Cmd+Enter
               </span>
               <button
@@ -425,27 +415,24 @@ export function InterviewPortalView({
           </section>
         </div>
 
-        {/* Right Sidebar: 13-State FSM, Audio/VAD & Integrity Telemetry */}
-        <aside className="space-y-6">
+        <aside className="interview-side-col">
           <div className="panel">
             <p className="eyebrow">Plane 1 State Machine</p>
             <h2 className="section-title">13-State FSM Live Inspector</h2>
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Active State</span>
+            <div className="telemetry-list">
+              <div className="telemetry-row">
+                <span className="muted">Active State</span>
                 <span className={badgeClass}>{snapshot.state}</span>
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Tokens Consumed</span>
-                <span className="font-mono font-semibold text-slate-200">
-                  {snapshot.tokensConsumed}
-                </span>
+              <div className="telemetry-row">
+                <span className="muted">Tokens Consumed</span>
+                <strong className="mono-code">{snapshot.tokensConsumed}</strong>
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Turn Window</span>
-                <span className="font-mono font-semibold text-sky-300">
+              <div className="telemetry-row">
+                <span className="muted">Turn Window</span>
+                <strong className="mono-code">
                   Turn #{snapshot.turnNumber} · L{snapshot.difficulty}
-                </span>
+                </strong>
               </div>
             </div>
           </div>
@@ -453,26 +440,22 @@ export function InterviewPortalView({
           <div className="panel">
             <p className="eyebrow">Web Audio Pipeline</p>
             <h2 className="section-title">VAD &amp; Ring-Buffer Telemetry</h2>
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Jitter Cushion</span>
-                <span className="font-mono font-semibold text-emerald-300">
-                  {jitterCushionMs} ms
-                </span>
+            <div className="telemetry-list">
+              <div className="telemetry-row">
+                <span className="muted">Jitter Cushion</span>
+                <strong className="badge badge-success">{jitterCushionMs} ms</strong>
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Audio Chunks (Turn)</span>
-                <span className="font-mono font-semibold text-slate-200">
-                  {snapshot.audioChunksSentInTurn}
-                </span>
+              <div className="telemetry-row">
+                <span className="muted">Audio Chunks (Turn)</span>
+                <strong className="mono-code">{snapshot.audioChunksSentInTurn}</strong>
               </div>
-              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <span className="text-slate-400">Last Barge-In Offset</span>
-                <span className="font-mono font-semibold text-amber-300">
+              <div className="telemetry-row">
+                <span className="muted">Last Barge-In Offset</span>
+                <strong className="badge badge-warning">
                   {snapshot.lastInterruptedPlaybackMs !== null
                     ? `${snapshot.lastInterruptedPlaybackMs} ms`
                     : "None"}
-                </span>
+                </strong>
               </div>
             </div>
           </div>
@@ -480,8 +463,8 @@ export function InterviewPortalView({
           <div className="panel">
             <p className="eyebrow">Anti-Cheat &amp; Fairness</p>
             <h2 className="section-title">Client Integrity Telemetry</h2>
-            <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs">
-              <span className="text-slate-400">Cadence Monitoring</span>
+            <div className="telemetry-row">
+              <span className="muted">Cadence Monitoring</span>
               <span
                 className={`badge ${
                   snapshot.accommodatedTextMode ? "badge-info" : "badge-success"
@@ -492,11 +475,11 @@ export function InterviewPortalView({
             </div>
 
             {snapshot.integrityWarnings.length === 0 ? (
-              <p className="muted">
+              <p className="muted compact-top">
                 No telemetry anomalies detected. Focus loss and paste burst signals nominal.
               </p>
             ) : (
-              <ul className="warning-list">
+              <ul className="warning-list compact-top">
                 {snapshot.integrityWarnings.map((warn, idx) => (
                   <li
                     key={`${warn.reasonCode}-${warn.turnNumber}-${idx}`}

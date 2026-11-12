@@ -16,11 +16,11 @@ export interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps): React.JSX.Element {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-slate-950 text-slate-50 antialiased">
+    <html lang="en">
+      <body className="app-body">
         <AppServicesProvider>
           <TopNavBar />
-          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="app-shell-main">{children}</main>
         </AppServicesProvider>
       </body>
     </html>

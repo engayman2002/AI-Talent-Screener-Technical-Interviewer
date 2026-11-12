@@ -20,7 +20,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     TS_NODE_ID=api-node-1 \
-    TS_SQLITE_DSN=/var/lib/talent_screener/runtime.db
+    TS_SQLITE_DSN=/var/lib/talent_screener/runtime.db \
+    DB_DSN=/var/lib/talent_screener/runtime.db \
+    DEMO_SEED_ENABLED=true
 
 RUN groupadd --gid 10001 appgroup \
     && useradd --uid 10001 --gid appgroup --shell /usr/sbin/nologin --create-home appuser \
@@ -40,6 +42,6 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import asyncio; from talent_screener.composition_root import build_production_container; from talent_screener.presentation.schemas import HttpRequest; b=build_production_container(); r=asyncio.run(b.rest_router.handle(HttpRequest(method='GET', path='/health/ready'))); assert r.status_code == 200"]
+    CMD ["python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3); assert r.status == 200"]
 
-CMD ["python", "-c", "import asyncio, signal; from talent_screener.composition_root import build_production_container; bundle = build_production_container(); stop = asyncio.Event(); loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop); loop.add_signal_handler(signal.SIGTERM, stop.set); loop.run_until_complete(stop.wait())"]
+CMD ["python", "-m", "talent_screener.composition_root.main", "--host", "0.0.0.0", "--port", "8000"]

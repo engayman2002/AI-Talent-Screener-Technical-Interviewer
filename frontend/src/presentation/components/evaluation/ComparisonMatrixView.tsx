@@ -154,7 +154,7 @@ export function ComparisonMatrixView({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="panel-stack">
       <header className="panel card-header-row">
         <div>
           <p className="eyebrow">
@@ -180,27 +180,21 @@ export function ComparisonMatrixView({
           {reportableCandidates.length > 0 && (
             <div>
               <p className="eyebrow">Select 2 to 4 Finalists</p>
-              <div className="mt-2 flex flex-wrap gap-3">
+              <div className="checkbox-chip-row">
                 {reportableCandidates.map((cand) => {
                   const checked = selectedIds.includes(cand.candidate_profile_id);
                   return (
                     <label
                       key={cand.candidate_profile_id}
-                      className={`toggle-control rounded-lg border px-3 py-2 text-xs transition ${
-                        checked
-                          ? "border-sky-500/50 bg-sky-500/10 text-sky-200"
-                          : "border-slate-800 bg-slate-950/70 text-slate-300"
-                      }`}
+                      className={`toggle-card ${checked ? "toggle-card--active" : ""}`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleCandidateSelection(cand.candidate_profile_id)}
                       />
-                      <span className="font-semibold">{cand.display_name}</span>
-                      <span className="font-mono text-[11px] text-slate-400">
-                        ({formatPercentage(cand.match_score)})
-                      </span>
+                      <strong>{cand.display_name}</strong>
+                      <span className="mono-code">({formatPercentage(cand.match_score)})</span>
                     </label>
                   );
                 })}
@@ -208,8 +202,8 @@ export function ComparisonMatrixView({
             </div>
           )}
 
-          <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-4">
-            <label className="field-group md:col-span-3">
+          <div className="form-grid-4">
+            <label className="field-group">
               <span>Candidate Profile IDs (2 to 4 comma-separated UUIDs)</span>
               <input
                 type="text"
@@ -219,7 +213,7 @@ export function ComparisonMatrixView({
             </label>
             <button
               type="submit"
-              className="btn btn-primary h-10"
+              className="btn btn-primary"
               disabled={state.isLoading}
             >
               {state.isLoading ? "Loading Matrix..." : "Compare Finalists"}
@@ -258,15 +252,15 @@ export function ComparisonMatrixView({
                       : (nameByCandidateId[col.candidateProfileId] ?? col.displayName);
                     return (
                       <th key={col.candidateProfileId}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <strong className="text-slate-100">
+                        <div className="badge-row">
+                          <strong>
                             #{col.rank} {resolvedName}
                           </strong>
                           <span className={bandBadgeClass(col.recommendationBand)}>
                             {col.recommendationBand}
                           </span>
                         </div>
-                        <div className="mt-1 font-mono text-xs text-slate-400">
+                        <div className="muted">
                           Index H = {col.holisticDecisionIndex.toFixed(1)} · Auth{" "}
                           {formatPercentage(col.authenticityBadge.score, 0)} (
                           {col.authenticityBadge.tier})
@@ -279,30 +273,28 @@ export function ComparisonMatrixView({
               <tbody>
                 <tr>
                   <td>
-                    <strong className="text-slate-100">Composite Calibration Summary</strong>
+                    <strong>Composite Calibration Summary</strong>
                     <div className="muted">Weighted Interview &amp; CV Alignment</div>
                   </td>
                   {state.matrix.columns.map((col) => (
                     <td key={col.candidateProfileId}>
-                      <div className="space-y-1 text-xs">
-                        <div>
-                          CV Match:{" "}
-                          <strong className="font-mono text-sky-300">
-                            {formatPercentage(col.compositeCvMatchScore)}
-                          </strong>
-                        </div>
-                        <div>
-                          Technical Posterior:{" "}
-                          <strong className="font-mono text-slate-100">
-                            {col.rawPosteriorTechnicalScore.toFixed(1)}
-                          </strong>
-                        </div>
-                        <div>
-                          Gap Resolution:{" "}
-                          <strong className="font-mono text-emerald-300">
-                            {formatPercentage(col.epistemicGapResolutionRatio, 0)}
-                          </strong>
-                        </div>
+                      <div>
+                        CV Match:{" "}
+                        <strong className="mono-code">
+                          {formatPercentage(col.compositeCvMatchScore)}
+                        </strong>
+                      </div>
+                      <div>
+                        Technical Posterior:{" "}
+                        <strong className="mono-code">
+                          {col.rawPosteriorTechnicalScore.toFixed(1)}
+                        </strong>
+                      </div>
+                      <div>
+                        Gap Resolution:{" "}
+                        <strong className="mono-code">
+                          {formatPercentage(col.epistemicGapResolutionRatio, 0)}
+                        </strong>
                       </div>
                     </td>
                   ))}
@@ -310,8 +302,8 @@ export function ComparisonMatrixView({
                 {state.matrix.rows.map((row) => (
                   <tr key={row.dimension.competencyId}>
                     <td>
-                      <strong className="text-slate-100">{row.dimension.competencyName}</strong>
-                      <div className="muted mt-0.5 font-mono text-xs">
+                      <strong>{row.dimension.competencyName}</strong>
+                      <div className="muted mono-code">
                         Weight {row.dimension.normalizedWeightPercent.toFixed(0)}% · Target L
                         {row.dimension.targetDepth}
                       </div>
@@ -339,14 +331,12 @@ export function ComparisonMatrixView({
                             }
                           >
                             <div>
-                              <strong className="text-sm text-slate-100">
-                                {cell.posteriorScore.toFixed(1)}
-                              </strong>{" "}
-                              <span className="muted font-mono text-xs">
+                              <strong>{cell.posteriorScore.toFixed(1)}</strong>{" "}
+                              <span className="muted mono-code">
                                 (EB {cell.empiricalBayesScore.toFixed(1)})
                               </span>
                             </div>
-                            <div className="muted font-mono text-xs">
+                            <div className="muted mono-code">
                               Depth {cell.achievedDepth.toFixed(1)} / L{cell.targetDepth} · Peak L
                               {cell.peakDifficultyReached}
                             </div>
@@ -371,9 +361,9 @@ export function ComparisonMatrixView({
       )}
 
       {state.selectedEvidence !== null && (
-        <aside className="panel drawer-panel" aria-label="Evidence Drilldown Drawer">
-          <div className="section-row mb-4">
-            <h2 className="section-title mb-0">
+        <aside className="panel" aria-label="Evidence Drilldown Drawer">
+          <div className="section-row">
+            <h2 className="section-title section-title--tight">
               Evidence Drilldown: {state.selectedEvidence.candidateLabel} —{" "}
               {state.selectedEvidence.competencyName}
             </h2>
@@ -386,28 +376,26 @@ export function ComparisonMatrixView({
             </button>
           </div>
           {activeEvidenceCell !== null ? (
-            <div className="evidence-grid">
+            <div className="evidence-grid compact-top">
               <div>
                 <span className="eyebrow">Grounded CV Claim Quote</span>
-                <p className="text-sm text-slate-200">{activeEvidenceCell.cvEvidenceQuote}</p>
+                <p>{activeEvidenceCell.cvEvidenceQuote}</p>
               </div>
               <div>
                 <span className="eyebrow">Adaptive Probe Question</span>
-                <p className="text-sm text-slate-200">{activeEvidenceCell.interviewQuestion}</p>
+                <p>{activeEvidenceCell.interviewQuestion}</p>
               </div>
               <div>
                 <span className="eyebrow">Candidate Response Excerpt</span>
-                <p className="text-sm text-slate-200">
-                  {activeEvidenceCell.candidateAnswerExcerpt}
-                </p>
+                <p>{activeEvidenceCell.candidateAnswerExcerpt}</p>
               </div>
               <div>
                 <span className="eyebrow">Evaluator Rationale</span>
-                <p className="text-sm text-slate-200">{activeEvidenceCell.evaluatorRationale}</p>
+                <p>{activeEvidenceCell.evaluatorRationale}</p>
               </div>
             </div>
           ) : (
-            <p className="muted">No detailed evidence loaded for this cell.</p>
+            <p className="muted compact-top">No detailed evidence loaded for this cell.</p>
           )}
         </aside>
       )}
@@ -416,7 +404,7 @@ export function ComparisonMatrixView({
         <p className="eyebrow">Governance &amp; Audit Ledger</p>
         <h2 className="section-title">Auditable Recruiter Override</h2>
         <form className="form-grid" onSubmit={(e) => void handleOverrideSubmit(e)}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="form-grid-2">
             <label className="field-group">
               <span>Evaluation Report ID</span>
               {reportableCandidates.length > 0 ? (
@@ -425,8 +413,12 @@ export function ComparisonMatrixView({
                   onChange={(e) => setOverrideReportId(e.target.value)}
                 >
                   {reportableCandidates.map((cand) => (
-                    <option key={cand.report_id ?? cand.candidate_profile_id} value={cand.report_id ?? ""}>
-                      {cand.display_name} — {cand.recommendation_band} ({formatShortUuid(cand.report_id ?? "")})
+                    <option
+                      key={cand.report_id ?? cand.candidate_profile_id}
+                      value={cand.report_id ?? ""}
+                    >
+                      {cand.display_name} — {cand.recommendation_band} (
+                      {formatShortUuid(cand.report_id ?? "")})
                     </option>
                   ))}
                 </select>
@@ -466,7 +458,9 @@ export function ComparisonMatrixView({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={overrideReportId.trim().length === 0 || overrideJustification.trim().length < 5}
+              disabled={
+                overrideReportId.trim().length === 0 || overrideJustification.trim().length < 5
+              }
             >
               Submit Audited Override
             </button>
@@ -475,9 +469,13 @@ export function ComparisonMatrixView({
 
         {state.lastOverrideReceipt !== null && (
           <div className="status-banner success">
-            Override saved: Report <code>{formatShortUuid(state.lastOverrideReceipt.report_id)}</code>{" "}
-            effective band is now <strong>{state.lastOverrideReceipt.effective_recommendation_band}</strong>{" "}
-            (Override count: {state.lastOverrideReceipt.override_count}).
+            Override saved: Report{" "}
+            <code className="mono-code">
+              {formatShortUuid(state.lastOverrideReceipt.report_id)}
+            </code>{" "}
+            effective band is now{" "}
+            <strong>{state.lastOverrideReceipt.effective_recommendation_band}</strong> (Override
+            count: {state.lastOverrideReceipt.override_count}).
           </div>
         )}
       </section>

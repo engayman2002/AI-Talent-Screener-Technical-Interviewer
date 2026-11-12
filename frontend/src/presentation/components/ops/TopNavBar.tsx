@@ -34,45 +34,34 @@ export function TopNavBar(): React.JSX.Element {
   ];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-3.5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/"
-            className="flex items-center gap-2.5 text-sm font-bold tracking-tight text-slate-50 no-underline hover:text-sky-300"
-          >
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-emerald-500 text-xs font-extrabold text-slate-950 shadow-sm">
-              AI
-            </span>
-            <span>AI Talent Screener &amp; Technical Interviewer</span>
+    <header className="nav-header">
+      <div className="nav-inner">
+        <div className="nav-brand-group">
+          <Link href="/" className="nav-brand-link">
+            <span className="nav-logo-badge">AI</span>
+            <span className="nav-brand-title">AI Talent Screener &amp; Technical Interviewer</span>
           </Link>
 
           <span
-            className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold sm:inline-flex ${
-              isBackendOnline
-                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
-                : "border-amber-500/35 bg-amber-500/10 text-amber-300"
+            className={`nav-status-pill ${
+              isBackendOnline ? "nav-status-pill--online" : "nav-status-pill--offline"
             }`}
           >
             <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                isBackendOnline ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+              className={`nav-status-dot ${
+                isBackendOnline ? "nav-status-dot--online" : "nav-status-dot--offline"
               }`}
             />
             {isBackendOnline ? "ONLINE" : "FALLBACK"}
           </span>
         </div>
 
-        <nav className="flex flex-wrap items-center gap-1.5" aria-label="Primary Navigation">
+        <nav className="nav-tabs" aria-label="Primary Navigation">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold no-underline transition ${
-                item.active
-                  ? "border border-sky-500/40 bg-sky-500/15 text-sky-300"
-                  : "border border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
-              }`}
+              className={`nav-tab ${item.active ? "nav-tab--active" : ""}`}
             >
               {item.label}
             </Link>

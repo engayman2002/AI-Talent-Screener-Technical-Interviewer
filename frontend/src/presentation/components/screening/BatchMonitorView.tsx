@@ -169,7 +169,7 @@ export function BatchMonitorView({
   const activeBatchDisplayId = state.batchId ?? batchId;
 
   return (
-    <div className="space-y-6">
+    <div className="panel-stack">
       <header className="panel card-header-row">
         <div>
           <p className="eyebrow">Recruiter 500-CV Bulk Ingestion &amp; SSE Monitor (ADR-011)</p>
@@ -183,8 +183,10 @@ export function BatchMonitorView({
       </header>
 
       <section className="panel" aria-label="Bulk CV Manifest Uploader">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="section-title mb-0">Initiate or Simulate Screening Batch (Up to 500 CVs)</h2>
+        <div className="section-row">
+          <h2 className="section-title section-title--tight">
+            Initiate or Simulate Screening Batch (Up to 500 CVs)
+          </h2>
           <button
             type="button"
             className="btn btn-emerald"
@@ -195,8 +197,8 @@ export function BatchMonitorView({
           </button>
         </div>
 
-        <form className="form-grid" onSubmit={(e) => void handleInitiate(e)}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <form className="form-grid compact-top" onSubmit={(e) => void handleInitiate(e)}>
+          <div className="form-grid-3">
             <label className="field-group">
               <span>Requisition ID</span>
               <input
@@ -278,8 +280,8 @@ export function BatchMonitorView({
 
       <section className="panel" aria-label="60 FPS Coalesced Progress Meter">
         <div className="section-row">
-          <h2 className="section-title mb-0">60 FPS Coalesced Batch Progress</h2>
-          <span className="badge badge-info font-mono">
+          <h2 className="section-title section-title--tight">60 FPS Coalesced Batch Progress</h2>
+          <span className="badge badge-info">
             {progressPercent}% ({state.completedCount + state.failedCount} / {state.totalFiles})
           </span>
         </div>
@@ -299,15 +301,15 @@ export function BatchMonitorView({
           </div>
           <div className="kpi-card">
             <span className="eyebrow">Completed</span>
-            <strong className="text-emerald-300">{state.completedCount}</strong>
+            <strong className="cmd-kpi-value--emerald">{state.completedCount}</strong>
           </div>
           <div className="kpi-card">
             <span className="eyebrow">Processing / Pending</span>
-            <strong className="text-sky-300">{state.pendingCount}</strong>
+            <strong className="cmd-kpi-value--sky">{state.pendingCount}</strong>
           </div>
           <div className="kpi-card">
             <span className="eyebrow">Failed / Quarantined</span>
-            <strong className="text-rose-300">{state.failedCount}</strong>
+            <strong className="cmd-metric-value--amber">{state.failedCount}</strong>
           </div>
         </div>
       </section>
@@ -317,7 +319,8 @@ export function BatchMonitorView({
         {state.tasks.length === 0 ? (
           <p className="muted">
             No ingestion tasks loaded yet. Initiate a batch or click &ldquo;Simulate Live 2-CV
-            Batch (SSE)&rdquo; to watch real-time CV parsing, PII redaction, and INT8 vector indexing.
+            Batch (SSE)&rdquo; to watch real-time CV parsing, PII redaction, and INT8 vector
+            indexing.
           </p>
         ) : (
           <div className="table-scroll">
@@ -335,20 +338,18 @@ export function BatchMonitorView({
                 {state.tasks.map((task) => (
                   <tr key={task.taskId}>
                     <td>
-                      <code className="font-mono text-xs text-slate-300">
-                        {formatShortUuid(task.taskId)}
-                      </code>
+                      <code className="mono-code">{formatShortUuid(task.taskId)}</code>
                     </td>
-                    <td className="font-medium text-slate-100">{task.filename}</td>
+                    <td>{task.filename}</td>
                     <td>
                       <span className={taskStatusBadgeClass(task.status)}>{task.status}</span>
                     </td>
                     <td>
-                      <code className="font-mono text-xs text-slate-400">
+                      <code className="mono-code">
                         {task.candidateProfileId ? formatShortUuid(task.candidateProfileId) : "—"}
                       </code>
                     </td>
-                    <td className="text-xs text-rose-300">{task.errorCode ?? "—"}</td>
+                    <td className="muted">{task.errorCode ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

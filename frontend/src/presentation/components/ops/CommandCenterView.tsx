@@ -25,23 +25,23 @@ function readField(
   return "—";
 }
 
-function bandBadgeClasses(bandOrTier: string | null): string {
+function bandBadgeClass(bandOrTier: string | null): string {
   switch (bandOrTier) {
     case "STRONG_HIRE":
     case "FAST_TRACK":
-      return "border-emerald-500/40 bg-emerald-500/15 text-emerald-300";
+      return "badge badge-success";
     case "HIRE":
     case "INTERVIEW":
-      return "border-sky-500/40 bg-sky-500/15 text-sky-300";
+      return "badge badge-info";
     case "BORDERLINE_HOLD":
     case "MANUAL_REVIEW":
-      return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+      return "badge badge-warning";
     case "NO_HIRE":
     case "GATEKEEPER_REJECTED":
     case "REJECTED":
-      return "border-rose-500/40 bg-rose-500/15 text-rose-300";
+      return "badge badge-danger";
     default:
-      return "border-slate-700 bg-slate-800/80 text-slate-300";
+      return "badge badge-neutral";
   }
 }
 
@@ -92,56 +92,47 @@ export function CommandCenterView(): React.JSX.Element {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="cmd-container">
       {/* Executive Hero & Live Runtime Banner */}
-      <section className="rounded-2xl border border-slate-800/90 bg-slate-900/90 p-6 shadow-2xl md:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2.5">
+      <section className="cmd-hero-panel">
+        <div className="cmd-status-bar">
+          <div className="cmd-status-pills">
             <span
-              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-xs font-semibold ${
-                state.isBackendOnline
-                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                  : "border-amber-500/40 bg-amber-500/15 text-amber-300"
+              className={`cmd-pill ${
+                state.isBackendOnline ? "cmd-pill--online" : "cmd-pill--offline"
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`nav-status-dot ${
                   state.isBackendOnline
-                    ? "bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse"
-                    : "bg-amber-400"
+                    ? "nav-status-dot--online"
+                    : "nav-status-dot--offline"
                 }`}
               />
               {state.isBackendOnline
-                ? `LIVE BACKEND ONLINE · ${manifest.organization_name}`
+                ? "LIVE BACKEND ONLINE"
                 : state.status === "BOOTSTRAPPING"
                   ? "CONNECTING TO ASGI RUNTIME…"
                   : "OFFLINE FALLBACK SHOWCASE MODE"}
             </span>
 
+            <span className="cmd-pill">{manifest.organization_name}</span>
+
             <span
-              className={`rounded-full border px-3 py-1 font-mono text-xs font-medium ${
-                manifest.llm_mode === "live"
-                  ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                  : "border-slate-700 bg-slate-950/80 text-slate-300"
+              className={`cmd-pill ${
+                manifest.llm_mode === "live" ? "cmd-pill--llm-live" : "cmd-pill--llm-det"
               }`}
             >
               LLM: {manifest.llm_mode.toUpperCase()} ({manifest.llm_provider} / {manifest.llm_model})
             </span>
           </div>
 
-          {/* Segmented Persona Switcher */}
-          <div
-            className="inline-flex rounded-xl border border-slate-800 bg-slate-950 p-1 text-xs"
-            role="group"
-            aria-label="Active JWT Persona"
-          >
+          <div className="persona-switch" role="group" aria-label="Active JWT Persona">
             <button
               type="button"
               onClick={() => setActiveRole("recruiter")}
-              className={`rounded-lg px-3.5 py-1.5 font-semibold transition ${
-                state.activeRole === "recruiter"
-                  ? "bg-sky-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+              className={`persona-btn ${
+                state.activeRole === "recruiter" ? "persona-btn--recruiter" : ""
               }`}
             >
               RECRUITER
@@ -149,10 +140,8 @@ export function CommandCenterView(): React.JSX.Element {
             <button
               type="button"
               onClick={() => setActiveRole("candidate")}
-              className={`rounded-lg px-3.5 py-1.5 font-semibold transition ${
-                state.activeRole === "candidate"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+              className={`persona-btn ${
+                state.activeRole === "candidate" ? "persona-btn--candidate" : ""
               }`}
             >
               CANDIDATE
@@ -160,11 +149,9 @@ export function CommandCenterView(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="mt-5">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-50 sm:text-3xl md:text-4xl">
-            Executive Architecture Command Center
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
+        <div>
+          <h1 className="cmd-hero-title">Executive Architecture Command Center</h1>
+          <p className="cmd-hero-subtitle">
             End-to-end Clean Architecture platform uniting cryptographic PII tokenization, INT8
             hybrid vector retrieval, stateful 4-plane LangGraph technical interviewing, 60 FPS SSE
             pipeline telemetry, and Empirical Bayes candidate decision calibration.
@@ -172,53 +159,47 @@ export function CommandCenterView(): React.JSX.Element {
         </div>
 
         {state.errorMessage && (
-          <div className="mt-4 rounded-xl border border-amber-500/35 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-200">
-            {state.errorMessage} Run <code className="font-mono text-amber-100">make dev-backend</code>{" "}
-            to enable live SQLite persistence, WebSockets, and SSE streaming.
+          <div className="status-banner danger">
+            {state.errorMessage} Run <code className="mono-code">make dev-backend</code> to enable
+            live SQLite persistence, WebSockets, and SSE streaming.
           </div>
         )}
 
         {/* 4-Column KPI Summary Grid */}
-        <div className="mt-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Seeded Requisition
-            </span>
-            <p className="mt-1 truncate text-sm font-semibold text-slate-100">
-              {manifest.requisition_title}
-            </p>
+        <div className="cmd-kpi-grid">
+          <div className="cmd-kpi-card">
+            <span className="cmd-kpi-label">Seeded Requisition</span>
+            <p className="cmd-kpi-value">{manifest.requisition_title}</p>
             <button
               type="button"
               title={`Copy ${manifest.requisition_id}`}
               onClick={() => handleCopyId("req", manifest.requisition_id)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+              className="cmd-uuid-chip"
             >
               {copiedId === "req" ? "Copied UUID" : formatShortUuid(manifest.requisition_id)}
             </button>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <div className="cmd-kpi-card">
+            <span className="cmd-kpi-label">
               Active Session (Turn {manifest.active_session_turn_number})
             </span>
-            <p className="mt-1 text-sm font-semibold text-sky-300">
+            <p className="cmd-kpi-value cmd-kpi-value--sky">
               Difficulty L{manifest.active_session_difficulty} · IN_PROGRESS
             </p>
             <button
               type="button"
               title={`Copy ${manifest.active_session_id}`}
               onClick={() => handleCopyId("sess", manifest.active_session_id)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+              className="cmd-uuid-chip"
             >
               {copiedId === "sess" ? "Copied UUID" : formatShortUuid(manifest.active_session_id)}
             </button>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Screening Batch
-            </span>
-            <p className="mt-1 text-sm font-semibold text-emerald-300">
+          <div className="cmd-kpi-card">
+            <span className="cmd-kpi-label">Screening Batch</span>
+            <p className="cmd-kpi-value cmd-kpi-value--emerald">
               {manifest.shortlisted_candidate_ids.length} Finalists /{" "}
               {manifest.candidate_profile_ids.length} CVs Ingested
             </p>
@@ -226,24 +207,22 @@ export function CommandCenterView(): React.JSX.Element {
               type="button"
               title={`Copy ${manifest.batch_id}`}
               onClick={() => handleCopyId("batch", manifest.batch_id)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+              className="cmd-uuid-chip"
             >
               {copiedId === "batch" ? "Copied UUID" : formatShortUuid(manifest.batch_id)}
             </button>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Evaluation Reports
-            </span>
-            <p className="mt-1 text-sm font-semibold text-violet-300">
+          <div className="cmd-kpi-card">
+            <span className="cmd-kpi-label">Evaluation Reports</span>
+            <p className="cmd-kpi-value cmd-kpi-value--violet">
               {manifest.report_ids.length} Finalized Reports Ready
             </p>
             <a
               href={swaggerHref}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-sky-300 no-underline hover:bg-sky-500/20"
+              className="cmd-swagger-link"
             >
               Open Swagger UI (/docs) ↗
             </a>
@@ -251,86 +230,70 @@ export function CommandCenterView(): React.JSX.Element {
         </div>
 
         {/* 3 Interactive Portal Launch Cards */}
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Link
-            href={`/interview/${manifest.active_session_id}`}
-            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-sky-500/60 hover:bg-slate-900"
-          >
+        <div className="cmd-portal-grid">
+          <Link href={`/interview/${manifest.active_session_id}`} className="cmd-portal-card">
             <div>
-              <span className="inline-block rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-sky-300">
-                Candidate Surface
-              </span>
-              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-sky-300">
-                Live Adaptive Interview Portal
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              <span className="cmd-portal-badge cmd-portal-badge--sky">Candidate Surface</span>
+              <h2 className="cmd-portal-title">Live Adaptive Interview Portal</h2>
+              <p className="cmd-portal-desc">
                 Full-duplex WebSocket streaming, active Turn 1 prompt, Socratic follow-up
                 branching, 280ms VAD barge-in, and accommodated text mode.
               </p>
             </div>
-            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-sky-400">
+            <div className="cmd-portal-cta">
               <span>Launch Interview</span>
-              <span className="transition group-hover:translate-x-1">→</span>
+              <span>→</span>
             </div>
           </Link>
 
-          <Link
-            href={`/recruiter/batches/${manifest.batch_id}`}
-            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-emerald-500/60 hover:bg-slate-900"
-          >
+          <Link href={`/recruiter/batches/${manifest.batch_id}`} className="cmd-portal-card">
             <div>
-              <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+              <span className="cmd-portal-badge cmd-portal-badge--emerald">
                 Recruiter Operations
               </span>
-              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-emerald-300">
-                Live Batch Monitor (SSE)
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              <h2 className="cmd-portal-title">Live Batch Monitor (SSE)</h2>
+              <p className="cmd-portal-desc">
                 60 FPS requestAnimationFrame SSE coalescing across bulk CV uploads, PII redaction,
                 vector indexing, and one-click live worker simulation.
               </p>
             </div>
-            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-emerald-400">
+            <div className="cmd-portal-cta">
               <span>Inspect Screening Batch</span>
-              <span className="transition group-hover:translate-x-1">→</span>
+              <span>→</span>
             </div>
           </Link>
 
           <Link
             href={`/recruiter/requisitions/${manifest.requisition_id}/compare`}
-            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-violet-500/60 hover:bg-slate-900"
+            className="cmd-portal-card"
           >
             <div>
-              <span className="inline-block rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300">
+              <span className="cmd-portal-badge cmd-portal-badge--violet">
                 Decision Workbench
               </span>
-              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-violet-300">
-                Side-by-Side Comparison Matrix
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              <h2 className="cmd-portal-title">Side-by-Side Comparison Matrix</h2>
+              <p className="cmd-portal-desc">
                 Posterior calibration across L2..L5 finalists, claim-verification variance, Blind
                 Hiring toggle, Evidence Drawer, and audited Recruiter Overrides.
               </p>
             </div>
-            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-violet-400">
+            <div className="cmd-portal-cta">
               <span>Open Decision Matrix</span>
-              <span className="transition group-hover:translate-x-1">→</span>
+              <span>→</span>
             </div>
           </Link>
         </div>
       </section>
 
-      {/* Bottom Grid: Telemetry/FinOps + Seeded Candidate Pipeline */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Bottom Telemetry + Seeded Candidate Pipeline Grid */}
+      <section className="cmd-section-grid">
+        <div className="cmd-panel">
+          <div className="cmd-section-head">
             <div>
               <p className="eyebrow">Observability &amp; Governance</p>
-              <h2 className="text-base font-semibold text-slate-100">
-                Live Readiness, FinOps &amp; Rubric Drift
-              </h2>
+              <h2 className="cmd-section-title">Live Readiness, FinOps &amp; Rubric Drift</h2>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="button-row">
               <button
                 type="button"
                 onClick={() => void refreshTelemetry()}
@@ -349,109 +312,85 @@ export function CommandCenterView(): React.JSX.Element {
             </div>
           </div>
 
-          {simNotice && (
-            <div className="status-banner success">{simNotice}</div>
-          )}
+          {simNotice && <div className="status-banner success">{simNotice}</div>}
 
-          <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-              <span className="text-xs font-medium text-slate-400">Readiness (/health/ready)</span>
-              <p className="mt-1 font-mono text-sm font-bold text-emerald-300">
+          <div className="cmd-metric-grid">
+            <div className="cmd-metric-card">
+              <span className="cmd-metric-label">Readiness (/health/ready)</span>
+              <p className="cmd-metric-value cmd-metric-value--emerald">
                 {health ? `${health.status.toUpperCase()} (${health.node_id})` : "OFFLINE"}
               </p>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                SQL: <span className="text-slate-200">{readField(health?.checks, "sql_database")}</span>{" "}
-                · Vector:{" "}
-                <span className="text-slate-200">{readField(health?.checks, "vector_store")}</span>
+              <p className="cmd-metric-sub">
+                SQL: {readField(health?.checks, "sql_database")} · Vector:{" "}
+                {readField(health?.checks, "vector_store")}
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-              <span className="text-xs font-medium text-slate-400">FinOps Spend (/v1/ops/metrics)</span>
-              <p className="mt-1 font-mono text-sm font-bold text-sky-300">{totalCostUsd}</p>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                Tokens:{" "}
-                <span className="text-slate-200">{readField(finops, "total_tokens")}</span> · Runs:{" "}
-                <span className="text-slate-200">{readField(finops, "invocation_count")}</span>
+            <div className="cmd-metric-card">
+              <span className="cmd-metric-label">FinOps Spend (/v1/ops/metrics)</span>
+              <p className="cmd-metric-value cmd-metric-value--sky">{totalCostUsd}</p>
+              <p className="cmd-metric-sub">
+                Tokens: {readField(finops, "total_tokens")} · Runs:{" "}
+                {readField(finops, "invocation_count")}
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-              <span className="text-xs font-medium text-slate-400">Rubric Drift Monitor</span>
-              <p className="mt-1 font-mono text-sm font-bold text-violet-300">
+            <div className="cmd-metric-card">
+              <span className="cmd-metric-label">Rubric Drift Monitor</span>
+              <p className="cmd-metric-value cmd-metric-value--violet">
                 Status:{" "}
                 {drift && drift["has_active_drift_alert"] === true ? "DRIFT DETECTED" : "NOMINAL"}
               </p>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                OTel spans recorded:{" "}
-                <span className="text-slate-200">{readField(latency, "total_spans")}</span>
+              <p className="cmd-metric-sub">
+                OTel spans recorded: {readField(latency, "total_spans")}
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-              <span className="text-xs font-medium text-slate-400">LLM Provider Telemetry</span>
-              <p className="mt-1 font-mono text-sm font-bold text-amber-300">
+            <div className="cmd-metric-card">
+              <span className="cmd-metric-label">LLM Provider Telemetry</span>
+              <p className="cmd-metric-value cmd-metric-value--amber">
                 {readField(llmRuntime, "live_calls")} Live /{" "}
                 {readField(llmRuntime, "fallback_calls")} Fallback
               </p>
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                Engine:{" "}
-                <span className="text-slate-200">{readField(llmRuntime, "provider")}</span>
-              </p>
+              <p className="cmd-metric-sub">Engine: {readField(llmRuntime, "provider")}</p>
             </div>
           </div>
         </div>
 
-        {/* Seeded Candidate Pipeline Card */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="cmd-panel">
+          <div className="cmd-section-head">
             <div>
               <p className="eyebrow">Hybrid Screening &amp; Finalist Outcomes</p>
-              <h2 className="text-base font-semibold text-slate-100">
+              <h2 className="cmd-section-title">
                 Seeded Candidate Pipeline ({manifest.candidate_summaries.length} Profiles)
               </h2>
             </div>
             <Link
               href={`/recruiter/requisitions/${manifest.requisition_id}/compare`}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-semibold text-sky-300 no-underline hover:border-sky-500"
+              className="btn btn-secondary"
             >
               Compare All →
             </Link>
           </div>
 
-          <div className="mt-4 space-y-3">
+          <div className="cmd-pipeline-grid">
             {manifest.candidate_summaries.map((cand) => {
               const badgeValue = cand.recommendation_band ?? cand.tier;
               return (
-                <div
-                  key={cand.candidate_profile_id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 transition hover:border-slate-700"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-100">
-                        {cand.display_name}
-                      </span>
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${bandBadgeClasses(cand.tier)}`}
-                      >
-                        {cand.tier}
-                      </span>
+                <div key={cand.candidate_profile_id} className="cmd-candidate-card">
+                  <div>
+                    <div className="cmd-candidate-top">
+                      <span className="cmd-candidate-name">{cand.display_name}</span>
+                      <span className={bandBadgeClass(cand.tier)}>{cand.tier}</span>
                     </div>
-                    <p className="mt-0.5 truncate font-mono text-[11px] text-slate-400">
-                      {cand.filename}
-                    </p>
+                    <p className="cmd-candidate-file">{cand.filename}</p>
                   </div>
 
-                  <div className="flex items-center gap-2.5">
-                    <span className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 font-mono text-xs font-semibold text-slate-200">
+                  <div className="cmd-candidate-bottom">
+                    <span className="cmd-match-pill">
                       Match {formatPercentage(cand.match_score)}
                     </span>
-                    <span
-                      className={`rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-wide ${bandBadgeClasses(badgeValue)}`}
-                    >
-                      {badgeValue}
-                    </span>
+                    <span className={bandBadgeClass(badgeValue)}>{badgeValue}</span>
                   </div>
                 </div>
               );

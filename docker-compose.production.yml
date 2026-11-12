@@ -74,6 +74,10 @@ services:
     environment:
       TS_ROLE: api
       TS_NODE_ID: api-node-1
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DB_DSN: /var/lib/talent_screener/runtime.db
+      DEMO_SEED_ENABLED: "true"
       POSTGRES_DSN: postgresql://talent_screener:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/talent_screener
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
@@ -125,7 +129,9 @@ services:
       backend-api:
         condition: service_healthy
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://backend-api:8000/api
+      BACKEND_INTERNAL_URL: http://backend-api:8000
+      NEXT_PUBLIC_API_BASE_URL: /api
+      NEXT_PUBLIC_WS_BASE_URL: ws://localhost:8000
     ports:
       - "3000:3000"
     deploy:
