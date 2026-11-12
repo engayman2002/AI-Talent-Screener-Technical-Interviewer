@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import React from "react";
+import { TopNavBar } from "../presentation/components/ops/TopNavBar";
 import { AppServicesProvider } from "../presentation/providers/AppServicesProvider";
 import "./globals.css";
 
@@ -16,22 +16,11 @@ export interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps): React.JSX.Element {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" className="dark">
+      <body className="min-h-screen bg-slate-950 text-slate-50 antialiased">
         <AppServicesProvider>
-          <header className="top-nav">
-            <Link href="/" className="top-nav-brand">
-              AI Talent Screener &amp; Technical Interviewer
-            </Link>
-            <nav className="top-nav-links" aria-label="Primary Navigation">
-              <Link href="/interview/sess-demo-01">Candidate Interview</Link>
-              <Link href="/recruiter/batches/batch-demo-01">Batch Monitor</Link>
-              <Link href="/recruiter/requisitions/req-staff-backend-01/compare">
-                Comparison Matrix
-              </Link>
-            </nav>
-          </header>
-          <main className="app-main">{children}</main>
+          <TopNavBar />
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </AppServicesProvider>
       </body>
     </html>

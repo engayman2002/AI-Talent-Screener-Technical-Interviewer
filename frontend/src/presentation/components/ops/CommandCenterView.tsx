@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
 import Link from "next/link";
+import React, { useState } from "react";
+import { formatPercentage, formatShortUuid } from "../../../domain/shared/formatters";
 import { useDemoBootstrap } from "../../hooks/useDemoBootstrap";
 
-function readNum(obj: Readonly<Record<string, unknown>> | undefined | null, key: string): string {
+function readField(
+  obj: Readonly<Record<string, unknown>> | undefined | null,
+  key: string,
+): string {
   if (!obj) {
     return "0";
   }
@@ -21,11 +25,32 @@ function readNum(obj: Readonly<Record<string, unknown>> | undefined | null, key:
   return "—";
 }
 
+function bandBadgeClasses(bandOrTier: string | null): string {
+  switch (bandOrTier) {
+    case "STRONG_HIRE":
+    case "FAST_TRACK":
+      return "border-emerald-500/40 bg-emerald-500/15 text-emerald-300";
+    case "HIRE":
+    case "INTERVIEW":
+      return "border-sky-500/40 bg-sky-500/15 text-sky-300";
+    case "BORDERLINE_HOLD":
+    case "MANUAL_REVIEW":
+      return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+    case "NO_HIRE":
+    case "GATEKEEPER_REJECTED":
+    case "REJECTED":
+      return "border-rose-500/40 bg-rose-500/15 text-rose-300";
+    default:
+      return "border-slate-700 bg-slate-800/80 text-slate-300";
+  }
+}
+
 export function CommandCenterView(): React.JSX.Element {
   const { state, refreshTelemetry, simulateLiveBatch, setActiveRole } = useDemoBootstrap();
   const { manifest, health, metrics } = state;
   const [simNotice, setSimNotice] = useState<string | null>(null);
   const [simRunning, setSimRunning] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const finops = metrics?.finops_ledger;
   const drift = metrics?.rubric_drift;
@@ -37,10 +62,17 @@ export function CommandCenterView(): React.JSX.Element {
       ? `$${(finops["total_cost_micro_usd"] / 1_000_000).toFixed(4)}`
       : "$0.0000";
 
-  const swaggerHref =
-    state.apiBaseUrl.startsWith("http")
-      ? `${state.apiBaseUrl}/docs`
-      : "/api/docs";
+  const swaggerHref = state.apiBaseUrl.startsWith("http")
+    ? `${state.apiBaseUrl}/docs`
+    : "/api/docs";
+
+  const handleCopyId = (label: string, val: string): void => {
+    if (typeof globalThis.navigator !== "undefined" && globalThis.navigator.clipboard) {
+      void globalThis.navigator.clipboard.writeText(val);
+    }
+    setCopiedId(label);
+    setTimeout(() => setCopiedId((curr) => (curr === label ? null : curr)), 1600);
+  };
 
   const handleSimulateFromHub = async (): Promise<void> => {
     setSimRunning(true);
@@ -48,7 +80,7 @@ export function CommandCenterView(): React.JSX.Element {
     try {
       const res = await simulateLiveBatch();
       setSimNotice(
-        `Simulated Batch ${res.batch_id.slice(0, 8)}… queued (${res.file_count} CVs). Open Live Batch Monitor to inspect SSE stream.`,
+        `Queued live simulated batch ${formatShortUuid(res.batch_id)} (${res.file_count} CVs). Open Live Batch Monitor to watch real-time SSE completion.`,
       );
       await refreshTelemetry();
     } catch (err) {
@@ -60,153 +92,249 @@ export function CommandCenterView(): React.JSX.Element {
   };
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6 md:p-10">
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/90 p-7 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
-            <span>
+    <div className="space-y-6">
+      {/* Executive Hero & Live Runtime Banner */}
+      <section className="rounded-2xl border border-slate-800/90 bg-slate-900/90 p-6 shadow-2xl md:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span
+              className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-xs font-semibold ${
+                state.isBackendOnline
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                  : "border-amber-500/40 bg-amber-500/15 text-amber-300"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  state.isBackendOnline
+                    ? "bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse"
+                    : "bg-amber-400"
+                }`}
+              />
               {state.isBackendOnline
                 ? `LIVE BACKEND ONLINE · ${manifest.organization_name}`
                 : state.status === "BOOTSTRAPPING"
                   ? "CONNECTING TO ASGI RUNTIME…"
                   : "OFFLINE FALLBACK SHOWCASE MODE"}
             </span>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span
-              className={`rounded-full border px-3 py-1 font-mono ${
+              className={`rounded-full border px-3 py-1 font-mono text-xs font-medium ${
                 manifest.llm_mode === "live"
                   ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                  : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                  : "border-slate-700 bg-slate-950/80 text-slate-300"
               }`}
             >
               LLM: {manifest.llm_mode.toUpperCase()} ({manifest.llm_provider} / {manifest.llm_model})
             </span>
+          </div>
+
+          {/* Segmented Persona Switcher */}
+          <div
+            className="inline-flex rounded-xl border border-slate-800 bg-slate-950 p-1 text-xs"
+            role="group"
+            aria-label="Active JWT Persona"
+          >
             <button
               type="button"
-              onClick={() => setActiveRole(state.activeRole === "recruiter" ? "candidate" : "recruiter")}
-              className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-slate-200 hover:border-sky-500"
+              onClick={() => setActiveRole("recruiter")}
+              className={`rounded-lg px-3.5 py-1.5 font-semibold transition ${
+                state.activeRole === "recruiter"
+                  ? "bg-sky-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
             >
-              Persona: <strong className="text-sky-300">{state.activeRole.toUpperCase()}</strong>
+              RECRUITER
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRole("candidate")}
+              className={`rounded-lg px-3.5 py-1.5 font-semibold transition ${
+                state.activeRole === "candidate"
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              CANDIDATE
             </button>
           </div>
         </div>
 
-        <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-50 md:text-4xl">
-          AI Talent Screener &amp; Technical Interviewer
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-300">
-          Executive Interactive Architecture Command Center — DDD Bounded Contexts, PII
-          Cryptographic Vault, INT8 Hybrid Vector Matching, LangGraph 4-Plane Adaptive Interview
-          Engine, RFC 9457 Governance, SSE Coalescing, and Full-Duplex WebSocket Streaming.
-        </p>
+        <div className="mt-5">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-50 sm:text-3xl md:text-4xl">
+            Executive Architecture Command Center
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
+            End-to-end Clean Architecture platform uniting cryptographic PII tokenization, INT8
+            hybrid vector retrieval, stateful 4-plane LangGraph technical interviewing, 60 FPS SSE
+            pipeline telemetry, and Empirical Bayes candidate decision calibration.
+          </p>
+        </div>
 
         {state.errorMessage && (
-          <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-            {state.errorMessage} Start backend with <code>make dev-backend</code> for live SQLite,
-            WebSocket &amp; SSE streaming.
-          </p>
+          <div className="mt-4 rounded-xl border border-amber-500/35 bg-amber-950/30 px-4 py-2.5 text-xs text-amber-200">
+            {state.errorMessage} Run <code className="font-mono text-amber-100">make dev-backend</code>{" "}
+            to enable live SQLite persistence, WebSockets, and SSE streaming.
+          </div>
         )}
 
-        <div className="mt-5 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs md:grid-cols-4">
-          <div>
-            <span className="text-slate-400">Seeded Requisition</span>
-            <p className="mt-0.5 font-semibold text-slate-100">{manifest.requisition_title}</p>
-            <p className="font-mono text-[11px] text-slate-400">{manifest.requisition_id}</p>
+        {/* 4-Column KPI Summary Grid */}
+        <div className="mt-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Seeded Requisition
+            </span>
+            <p className="mt-1 truncate text-sm font-semibold text-slate-100">
+              {manifest.requisition_title}
+            </p>
+            <button
+              type="button"
+              title={`Copy ${manifest.requisition_id}`}
+              onClick={() => handleCopyId("req", manifest.requisition_id)}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+            >
+              {copiedId === "req" ? "Copied UUID" : formatShortUuid(manifest.requisition_id)}
+            </button>
           </div>
-          <div>
-            <span className="text-slate-400">Active Session (Turn {manifest.active_session_turn_number})</span>
-            <p className="mt-0.5 font-semibold text-sky-300">
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Active Session (Turn {manifest.active_session_turn_number})
+            </span>
+            <p className="mt-1 text-sm font-semibold text-sky-300">
               Difficulty L{manifest.active_session_difficulty} · IN_PROGRESS
             </p>
-            <p className="font-mono text-[11px] text-slate-400">{manifest.active_session_id}</p>
+            <button
+              type="button"
+              title={`Copy ${manifest.active_session_id}`}
+              onClick={() => handleCopyId("sess", manifest.active_session_id)}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+            >
+              {copiedId === "sess" ? "Copied UUID" : formatShortUuid(manifest.active_session_id)}
+            </button>
           </div>
-          <div>
-            <span className="text-slate-400">Screening Batch</span>
-            <p className="mt-0.5 font-semibold text-emerald-300">
-              {manifest.shortlisted_candidate_ids.length} Shortlisted / {manifest.candidate_profile_ids.length} Ingested
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Screening Batch
+            </span>
+            <p className="mt-1 text-sm font-semibold text-emerald-300">
+              {manifest.shortlisted_candidate_ids.length} Finalists /{" "}
+              {manifest.candidate_profile_ids.length} CVs Ingested
             </p>
-            <p className="font-mono text-[11px] text-slate-400">{manifest.batch_id}</p>
+            <button
+              type="button"
+              title={`Copy ${manifest.batch_id}`}
+              onClick={() => handleCopyId("batch", manifest.batch_id)}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300 hover:border-sky-500/50 hover:text-sky-300"
+            >
+              {copiedId === "batch" ? "Copied UUID" : formatShortUuid(manifest.batch_id)}
+            </button>
           </div>
-          <div>
-            <span className="text-slate-400">Evaluation Reports</span>
-            <p className="mt-0.5 font-semibold text-violet-300">
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Evaluation Reports
+            </span>
+            <p className="mt-1 text-sm font-semibold text-violet-300">
               {manifest.report_ids.length} Finalized Reports Ready
             </p>
             <a
               href={swaggerHref}
               target="_blank"
               rel="noreferrer"
-              className="mt-0.5 inline-block font-mono text-[11px] text-sky-400 underline hover:text-sky-300"
+              className="mt-2 inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-sky-300 no-underline hover:bg-sky-500/20"
             >
-              Open Swagger UI (/docs) →
+              Open Swagger UI (/docs) ↗
             </a>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
+        {/* 3 Interactive Portal Launch Cards */}
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Link
             href={`/interview/${manifest.active_session_id}`}
-            className="group rounded-xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-sky-500/60"
+            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-sky-500/60 hover:bg-slate-900"
           >
-            <p className="text-xs font-semibold uppercase tracking-wider text-sky-400">
-              Candidate Surface
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-100 group-hover:text-sky-300">
-              Live Adaptive Interview Portal →
-            </h2>
-            <p className="mt-2 text-xs text-slate-400">
-              WebSocket /v1/interviews/…/ws, Turn 1 active session, Socratic probing, 280ms
-              barge-in &amp; accommodated text mode.
-            </p>
+            <div>
+              <span className="inline-block rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-sky-300">
+                Candidate Surface
+              </span>
+              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-sky-300">
+                Live Adaptive Interview Portal
+              </h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                Full-duplex WebSocket streaming, active Turn 1 prompt, Socratic follow-up
+                branching, 280ms VAD barge-in, and accommodated text mode.
+              </p>
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-sky-400">
+              <span>Launch Interview</span>
+              <span className="transition group-hover:translate-x-1">→</span>
+            </div>
           </Link>
 
           <Link
             href={`/recruiter/batches/${manifest.batch_id}`}
-            className="group rounded-xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-emerald-500/60"
+            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-emerald-500/60 hover:bg-slate-900"
           >
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-              Recruiter Operations
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-100 group-hover:text-emerald-300">
-              Live Batch Monitor (SSE) →
-            </h2>
-            <p className="mt-2 text-xs text-slate-400">
-              60 FPS requestAnimationFrame SSE coalescing, task reconciliation, and one-click live
-              2-CV background worker simulation.
-            </p>
+            <div>
+              <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                Recruiter Operations
+              </span>
+              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-emerald-300">
+                Live Batch Monitor (SSE)
+              </h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                60 FPS requestAnimationFrame SSE coalescing across bulk CV uploads, PII redaction,
+                vector indexing, and one-click live worker simulation.
+              </p>
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-emerald-400">
+              <span>Inspect Screening Batch</span>
+              <span className="transition group-hover:translate-x-1">→</span>
+            </div>
           </Link>
 
           <Link
             href={`/recruiter/requisitions/${manifest.requisition_id}/compare`}
-            className="group rounded-xl border border-slate-800 bg-slate-950/70 p-5 transition hover:border-violet-500/60"
+            className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-950/80 p-5 no-underline transition hover:-translate-y-0.5 hover:border-violet-500/60 hover:bg-slate-900"
           >
-            <p className="text-xs font-semibold uppercase tracking-wider text-violet-400">
-              Decision Workbench
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-100 group-hover:text-violet-300">
-              Side-by-Side Comparison Matrix →
-            </h2>
-            <p className="mt-2 text-xs text-slate-400">
-              L2..L5 finalist evaluations, claim-verification variance, Blind Hiring Mode, and
-              audited Recruiter Overrides.
-            </p>
+            <div>
+              <span className="inline-block rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300">
+                Decision Workbench
+              </span>
+              <h2 className="mt-3 text-lg font-semibold text-slate-50 group-hover:text-violet-300">
+                Side-by-Side Comparison Matrix
+              </h2>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                Posterior calibration across L2..L5 finalists, claim-verification variance, Blind
+                Hiring toggle, Evidence Drawer, and audited Recruiter Overrides.
+              </p>
+            </div>
+            <div className="mt-5 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs font-semibold text-violet-400">
+              <span>Open Decision Matrix</span>
+              <span className="transition group-hover:translate-x-1">→</span>
+            </div>
           </Link>
         </div>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
-              Live Runtime Readiness, FinOps &amp; Rubric Drift
-            </h2>
-            <div className="flex gap-2">
+      {/* Bottom Grid: Telemetry/FinOps + Seeded Candidate Pipeline */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow">Observability &amp; Governance</p>
+              <h2 className="text-base font-semibold text-slate-100">
+                Live Readiness, FinOps &amp; Rubric Drift
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => void refreshTelemetry()}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-200 hover:border-sky-500"
+                className="btn btn-secondary"
               >
                 Refresh Metrics
               </button>
@@ -214,7 +342,7 @@ export function CommandCenterView(): React.JSX.Element {
                 type="button"
                 disabled={simRunning || !state.isBackendOnline}
                 onClick={() => void handleSimulateFromHub()}
-                className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-emerald"
               >
                 {simRunning ? "Queuing…" : "Simulate Live Batch"}
               </button>
@@ -222,87 +350,115 @@ export function CommandCenterView(): React.JSX.Element {
           </div>
 
           {simNotice && (
-            <p className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
-              {simNotice}
-            </p>
+            <div className="status-banner success">{simNotice}</div>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">Readiness (/health/ready)</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-emerald-300">
+          <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+              <span className="text-xs font-medium text-slate-400">Readiness (/health/ready)</span>
+              <p className="mt-1 font-mono text-sm font-bold text-emerald-300">
                 {health ? `${health.status.toUpperCase()} (${health.node_id})` : "OFFLINE"}
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                SQL: {readNum(health?.checks, "sql_database")} · Vector:{" "}
-                {readNum(health?.checks, "vector_store")}
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                SQL: <span className="text-slate-200">{readField(health?.checks, "sql_database")}</span>{" "}
+                · Vector:{" "}
+                <span className="text-slate-200">{readField(health?.checks, "vector_store")}</span>
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">FinOps Spend (/v1/ops/metrics)</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-sky-300">{totalCostUsd}</p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Tokens: {readNum(finops, "total_tokens")} · Runs: {readNum(finops, "invocation_count")}
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+              <span className="text-xs font-medium text-slate-400">FinOps Spend (/v1/ops/metrics)</span>
+              <p className="mt-1 font-mono text-sm font-bold text-sky-300">{totalCostUsd}</p>
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                Tokens:{" "}
+                <span className="text-slate-200">{readField(finops, "total_tokens")}</span> · Runs:{" "}
+                <span className="text-slate-200">{readField(finops, "invocation_count")}</span>
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">Rubric Drift Monitor</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-violet-300">
-                Alert:{" "}
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+              <span className="text-xs font-medium text-slate-400">Rubric Drift Monitor</span>
+              <p className="mt-1 font-mono text-sm font-bold text-violet-300">
+                Status:{" "}
                 {drift && drift["has_active_drift_alert"] === true ? "DRIFT DETECTED" : "NOMINAL"}
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Spans recorded: {readNum(latency, "total_spans")}
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                OTel spans recorded:{" "}
+                <span className="text-slate-200">{readField(latency, "total_spans")}</span>
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-              <p className="text-slate-400">LLM Bridge Calls</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-amber-300">
-                {readNum(llmRuntime, "live_calls")} Live / {readNum(llmRuntime, "fallback_calls")} Fallback
+            <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+              <span className="text-xs font-medium text-slate-400">LLM Provider Telemetry</span>
+              <p className="mt-1 font-mono text-sm font-bold text-amber-300">
+                {readField(llmRuntime, "live_calls")} Live /{" "}
+                {readField(llmRuntime, "fallback_calls")} Fallback
               </p>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Provider: {readNum(llmRuntime, "provider")}
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                Engine:{" "}
+                <span className="text-slate-200">{readField(llmRuntime, "provider")}</span>
               </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
-            Seeded Candidate Pipeline ({manifest.candidate_summaries.length} Processed Profiles)
-          </h2>
-          <div className="mt-4 space-y-2.5">
-            {manifest.candidate_summaries.map((cand) => (
-              <div
-                key={cand.candidate_profile_id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-xs"
-              >
-                <div>
-                  <p className="font-semibold text-slate-100">{cand.display_name}</p>
-                  <p className="font-mono text-[11px] text-slate-400">{cand.filename}</p>
+        {/* Seeded Candidate Pipeline Card */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="eyebrow">Hybrid Screening &amp; Finalist Outcomes</p>
+              <h2 className="text-base font-semibold text-slate-100">
+                Seeded Candidate Pipeline ({manifest.candidate_summaries.length} Profiles)
+              </h2>
+            </div>
+            <Link
+              href={`/recruiter/requisitions/${manifest.requisition_id}/compare`}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-semibold text-sky-300 no-underline hover:border-sky-500"
+            >
+              Compare All →
+            </Link>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {manifest.candidate_summaries.map((cand) => {
+              const badgeValue = cand.recommendation_band ?? cand.tier;
+              return (
+                <div
+                  key={cand.candidate_profile_id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/80 px-4 py-3 transition hover:border-slate-700"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-100">
+                        {cand.display_name}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${bandBadgeClasses(cand.tier)}`}
+                      >
+                        {cand.tier}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate font-mono text-[11px] text-slate-400">
+                      {cand.filename}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <span className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 font-mono text-xs font-semibold text-slate-200">
+                      Match {formatPercentage(cand.match_score)}
+                    </span>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-wide ${bandBadgeClasses(badgeValue)}`}
+                    >
+                      {badgeValue}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-slate-300">
-                    Match {(cand.match_score * 100).toFixed(1)}%
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                      cand.tier === "GATEKEEPER_REJECTED"
-                        ? "bg-rose-500/20 text-rose-300"
-                        : "bg-emerald-500/20 text-emerald-300"
-                    }`}
-                  >
-                    {cand.recommendation_band ?? cand.tier}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

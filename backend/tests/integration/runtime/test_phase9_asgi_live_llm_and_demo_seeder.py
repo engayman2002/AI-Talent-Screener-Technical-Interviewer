@@ -478,6 +478,14 @@ async def _verify_full_runtime_e2e(tmp_path: Path) -> None:
             assert st == 200
             api_manifest = json.loads(manifest_body)["data"]
             assert api_manifest["requisition_id"] == manifest_second.requisition_id
+            by_name = {item["display_name"]: item for item in api_manifest["candidate_summaries"]}
+            assert 88.0 <= by_name["Elena Vance"]["match_score"] <= 100.0
+            assert by_name["Elena Vance"]["tier"] == "FAST_TRACK"
+            assert by_name["Elena Vance"]["recommendation_band"] == "STRONG_HIRE"
+            assert 75.0 <= by_name["Marcus Chen"]["match_score"] <= 88.0
+            assert by_name["Marcus Chen"]["recommendation_band"] == "HIRE"
+            assert by_name["Devon Brooks"]["tier"] == "GATEKEEPER_REJECTED"
+            assert by_name["Devon Brooks"]["match_score"] == 0.0
 
             recruiter_hdrs = {"Authorization": f"Bearer {api_manifest['recruiter_jwt']}"}
 

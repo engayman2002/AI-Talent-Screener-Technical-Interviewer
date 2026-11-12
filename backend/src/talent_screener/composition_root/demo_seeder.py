@@ -38,6 +38,7 @@ from talent_screener.application.recruitment.dtos import (
     CompetencyCriterionInputDTO,
     CreateJobRequisitionRequestDTO,
     PublishJobRequisitionRequestDTO,
+    TierThresholdsDTO,
 )
 from talent_screener.domain.contexts.document_intelligence import CandidateTier
 from talent_screener.domain.contexts.identity_governance import ConsentScope
@@ -74,15 +75,19 @@ _DEMO_CVS: tuple[tuple[str, str, bytes, str], ...] = (
             b"%PDF-1.7\n"
             b"Name: Elena Vance\n"
             b"Email: elena.vance@acme-demo.dev\n"
-            b"SUMMARY\n"
-            b"Staff AI Systems & Full-Stack Engineer specializing in Python asyncio, FastAPI, "
-            b"LangGraph, Qdrant, PostgreSQL, TypeScript, and Next.js.\n"
             b"EXPERIENCE\n"
             b"Staff AI Platform Architect 2017-03 to Present\n"
-            b"Architected Python asyncio and FastAPI ingestion gateways handling 120k req/sec with "
-            b"45% latency reduction via backpressure queues, PostgreSQL WAL transactional outbox, "
-            b"Redis fencing leases, LangGraph Socratic workflows, and Qdrant INT8 vector search.\n"
-            b"Led TypeScript and Next.js Clean Architecture frontend portals with streaming WS.\n"
+            b"Architected Python asyncio FastAPI distributed concurrency gateways at 120k rps "
+            b"with 45% latency reduction.\n"
+            b"PROJECTS\n"
+            b"Architected LangGraph LangChain LLM RAG interview agent workflows scaling 90k rps "
+            b"with 60% accuracy improvement.\n"
+            b"EXPERIENCE\n"
+            b"Principal Retrieval Architect 2019-01 to 2022-06\n"
+            b"Architected Qdrant pgvector vector embeddings BM25 retrieval clusters handling "
+            b"80k rps with 40% memory reduction.\n"
+            b"PROJECTS\n"
+            b"Architected TypeScript React Next.js portals scaling 50k rps, 42% faster render.\n"
         ),
         "shortlisted",
     ),
@@ -93,13 +98,16 @@ _DEMO_CVS: tuple[tuple[str, str, bytes, str], ...] = (
             b"%PDF-1.7\n"
             b"Name: Marcus Chen\n"
             b"Email: marcus.chen@acme-demo.dev\n"
-            b"SUMMARY\n"
-            b"Senior Full-Stack Engineer experienced in Python, FastAPI, LangGraph, PostgreSQL, "
-            b"Qdrant, Docker, TypeScript, React, and Next.js.\n"
             b"EXPERIENCE\n"
             b"Senior Backend & AI Engineer 2019-05 to Present\n"
-            b"Built FastAPI microservices and Python asyncio extractors scaled to 40k rps with "
-            b"32% cost reduction, pgvector hybrid search, and TypeScript Next.js dashboards.\n"
+            b"Built Python asyncio FastAPI distributed microservices scaling 40k rps with 32% "
+            b"cost reduction.\n"
+            b"PROJECTS\n"
+            b"Built LangGraph LangChain LLM RAG evaluation pipelines with 25% accuracy gain.\n"
+            b"EXPERIENCE\n"
+            b"Full-Stack Platform Engineer 2018-01 to 2019-04\n"
+            b"Built Qdrant pgvector vector BM25 services and TypeScript React Next.js dashboards "
+            b"serving 20k rps with 30% faster queries.\n"
         ),
         "shortlisted",
     ),
@@ -110,13 +118,11 @@ _DEMO_CVS: tuple[tuple[str, str, bytes, str], ...] = (
             b"%PDF-1.7\n"
             b"Name: Priya Nair\n"
             b"Email: priya.nair@acme-demo.dev\n"
-            b"SUMMARY\n"
-            b"AI Product Engineer skilled in Python, FastAPI, LangGraph, Vector Search, "
-            b"PostgreSQL, TypeScript, and Next.js.\n"
             b"EXPERIENCE\n"
             b"Software Engineer 2022-01 to Present\n"
-            b"Implemented RAG document pipelines with LangChain, LangGraph prototypes, Python "
-            b"FastAPI endpoints, and TypeScript React components.\n"
+            b"Built Python asyncio FastAPI endpoints and TypeScript React Next.js UI workflows.\n"
+            b"PROJECTS\n"
+            b"Built LangGraph LLM RAG prototypes and Qdrant pgvector vector search indexing.\n"
         ),
         "shortlisted",
     ),
@@ -345,6 +351,11 @@ async def seed_interactive_demo_environment(
                 "Next.js Clean Architecture real-time portals."
             ),
             seniority_level=SeniorityLevel.SENIOR,
+            tier_thresholds=TierThresholdsDTO(
+                fast_track_threshold=88.0,
+                interview_threshold=65.0,
+                review_threshold=50.0,
+            ),
             criteria=(
                 CompetencyCriterionInputDTO(
                     name="Distributed Backend & FastAPI",
@@ -353,9 +364,7 @@ async def seed_interactive_demo_environment(
                     target_depth=4,
                     is_gatekeeper=True,
                     min_applied_months=24,
-                    ideal_anchor_descriptor=(
-                        "Python asyncio FastAPI backpressure transactional outbox resilience"
-                    ),
+                    ideal_anchor_descriptor="Python asyncio FastAPI distributed concurrency",
                 ),
                 CompetencyCriterionInputDTO(
                     name="Stateful LangGraph AI Agents",
@@ -364,9 +373,7 @@ async def seed_interactive_demo_environment(
                     target_depth=4,
                     is_gatekeeper=False,
                     min_applied_months=12,
-                    ideal_anchor_descriptor=(
-                        "LangGraph state machine Socratic probing prompt guardrails checkpointing"
-                    ),
+                    ideal_anchor_descriptor="LangGraph LangChain LLM RAG",
                 ),
                 CompetencyCriterionInputDTO(
                     name="Hybrid Vector & SQL Persistence",
@@ -375,9 +382,7 @@ async def seed_interactive_demo_environment(
                     target_depth=4,
                     is_gatekeeper=False,
                     min_applied_months=12,
-                    ideal_anchor_descriptor=(
-                        "Qdrant pgvector INT8 quantization PostgreSQL WAL outbox reconciliation"
-                    ),
+                    ideal_anchor_descriptor="Qdrant pgvector vector embeddings BM25",
                 ),
                 CompetencyCriterionInputDTO(
                     name="Next.js Clean Architecture",
@@ -386,9 +391,7 @@ async def seed_interactive_demo_environment(
                     target_depth=4,
                     is_gatekeeper=True,
                     min_applied_months=18,
-                    ideal_anchor_descriptor=(
-                        "TypeScript Next.js Clean Architecture FSM WebSocket barge-in UI"
-                    ),
+                    ideal_anchor_descriptor="TypeScript React Next.js",
                 ),
             ),
         )
@@ -477,27 +480,58 @@ async def seed_interactive_demo_environment(
         else:
             shortlisted_ids.append(cid)
 
-    # 4. Run 3 completed adaptive interviews producing varied L2..L5 EvaluationReports
-    turn_scripts: tuple[tuple[str, str], ...] = (
+    # 4. Run 3 completed adaptive interviews across all 4 competencies (L2..L5 differentiation)
+    turn_scripts: tuple[tuple[str, ...], ...] = (
         (
-            "In our FastAPI asyncio workers, we bound concurrency using an asyncio.Semaphore and "
-            "monotonic fencing tokens acquired from Redis leases, persisting domain events into "
-            "a transactional outbox in PostgreSQL WAL before commit to prevent split-brain writes "
-            "while maintaining p99 tail latency below 38ms tradeoffs.",
-            "For LangGraph state machines, we isolate untrusted candidate text inside strict XML "
-            "boundaries, shard SQLite/PostgreSQL checkpoints by tenant_id with optimistic version "
-            "guards, and quantize Qdrant vectors to INT8 to cut RAM 4x with minimal recall loss.",
+            "For Python asyncio and FastAPI distributed concurrency, we bound worker pools via "
+            "asyncio Semaphore, monotonic fencing lease tokens, and SQL WAL transactional outbox "
+            "commits to prevent split-brain writes, trading 4ms overhead for 120k rps at 38ms p99.",
+            "Under L4/L5 distributed failover, quorum fencing tokens reject stale leases, circuit "
+            "breakers apply exponential backoff jitter, and backpressure queues cap memory "
+            "bottleneck tradeoffs with 99.9% throughput stability under burst load.",
+            "On TypeScript React and Next.js Clean Architecture, we isolate WebSocket frames and "
+            "ring buffer AudioWorklet hysteresis in infrastructure behind a 13-state FSM "
+            "coordinator, trading reducer overhead for predictable 280ms latency.",
+            "For TypeScript React and Next.js SSE monitors, requestAnimationFrame batch "
+            "coalescing caps DOM layout thrashing and memory churn bottleneck tradeoffs, "
+            "maintaining 60fps UI updates across 500 concurrent tasks.",
+            "In LangGraph LangChain LLM RAG agents, we checkpoint typed reducer planes with lock "
+            "fencing and XML isolation boundaries to defeat prompt injection latency and "
+            "throughput tradeoffs, achieving 45% token cost savings at 90k rps.",
+            "During LangGraph L4 Socratic escalation, deterministic edge routing bounds retry "
+            "loops with sliding window token budgets and fallback guards so hallucination risk "
+            "stays under 2% while preserving 180ms median turn latency.",
+            "For Qdrant pgvector vector embeddings and BM25 persistence, INT8 quantization "
+            "with anti-entropy SQL outbox watermark reconciliation cuts RAM overhead 4x with 99% "
+            "recall, trading minimal precision loss for linear shard scaling.",
+            "Across L4 vector index shards, consistent hashing routes tenant partitions with LRU "
+            "cache TTL eviction and idempotent upserts so outbox replays prevent skew.",
         ),
         (
-            "We combine FastAPI async endpoints with bounded worker queues and idempotency keys in "
-            "PostgreSQL, handling backpressure with HTTP 429 retry-after headers and exponential "
-            "backoff with jitter so retries never amplify downstream spikes.",
-            "On Next.js TypeScript clients, we isolate WebSocket and AudioWorklet barge-in in "
-            "infrastructure adapters behind a pure 13-state FSM coordinator for clean UI state.",
+            "We pair Python asyncio FastAPI distributed workers with bounded semaphore queues and "
+            "idempotency keys in SQL outbox tables, handling backpressure via retry backoff "
+            "jitter and timeout circuit breakers at 40k rps with 32% lower memory overhead.",
+            "At L4 Python asyncio overload, mutex lease timeouts and queue batch size limits cap "
+            "downstream bottleneck risk, trading slightly higher p99 latency for 99.5% durability.",
+            "On TypeScript React Next.js portals, we isolate WebSocket state and async telemetry "
+            "hooks behind typed ports, trading extra abstraction overhead for predictable "
+            "reconnect recovery and 30% lower memory usage.",
+            "For Next.js TypeScript state sync, LRU memoization and backoff reconnect jitter keep "
+            "tail UI jitter below 45ms under bursty socket churn.",
+            "With LangGraph LangChain LLM RAG agents, sliding token budgets and WAL checkpointing "
+            "prevent stale conversation offset drift, balancing latency vs accuracy tradeoffs.",
+            "During LangGraph L4 Socratic probing, deterministic edge guards enforce retry bounds "
+            "and JSON schema validation fallback with 25% lower token cost.",
+            "Using Qdrant pgvector vector embeddings and BM25 search, SQL watermark reconciliation "
+            "and TTL cache eviction prevent stale shard drift at 20k rps.",
+            "Across pgvector L4 partitions, consistent index sharding bounds query p99 latency "
+            "under 35ms while trading small INT8 quantization overhead for 3x RAM savings.",
         ),
         (
-            "We built Python FastAPI services and LangGraph chains using caching and Postgres.",
-            "When throughput rises we add more queue workers and retry failed database inserts.",
+            "We used Python and FastAPI microservices behind a load balancer with caching.",
+            "On Next.js TypeScript pages we fetch endpoints and update component hooks.",
+            "We built LangGraph and RAG chains that query Qdrant vectors directly.",
+            "When errors happen we retry database writes with queue workers.",
         ),
     )
 
@@ -511,43 +545,40 @@ async def seed_interactive_demo_environment(
                 tenant_id=tid,
                 requisition_id=req_res.requisition_id,
                 candidate_profile_id=cid,
-                max_turns=6,
+                max_turns=10,
             )
         )
         ckpt = init_iv.checkpoint_version
-        t1_ans, t2_ans = turn_scripts[idx]
+        already_completed = False
+        for t_idx, utterance in enumerate(turn_scripts[idx], start=1):
+            t_res = await c.process_candidate_turn.execute(
+                ProcessCandidateTurnRequestDTO(
+                    tenant_id=tid,
+                    session_id=init_iv.session_id,
+                    turn_number=t_idx,
+                    checkpoint_version=ckpt,
+                    candidate_utterance=utterance,
+                    remaining_seconds=max(300, 1750 - t_idx * 160),
+                    telemetry=_clean_telemetry(
+                        920 if idx == 0 else 1320 + idx * 180,
+                        wpm=145.0 - idx * 8.0,
+                    ),
+                    correlation_id=f"corr-seed-c{idx}-t{t_idx}",
+                )
+            )
+            ckpt = t_res.updated_checkpoint_version
+            already_completed = t_res.is_completed
+            if already_completed:
+                break
 
-        t1 = await c.process_candidate_turn.execute(
-            ProcessCandidateTurnRequestDTO(
-                tenant_id=tid,
-                session_id=init_iv.session_id,
-                turn_number=1,
-                checkpoint_version=ckpt,
-                candidate_utterance=t1_ans,
-                remaining_seconds=1620,
-                telemetry=_clean_telemetry(980 if idx == 0 else 1350, wpm=145.0 - idx * 8.0),
-                correlation_id=f"corr-seed-turn1-{idx}",
+        if not already_completed:
+            await c.complete_interview_session.execute(
+                CompleteInterviewSessionRequestDTO(
+                    tenant_id=tid,
+                    session_id=init_iv.session_id,
+                    checkpoint_version=ckpt,
+                )
             )
-        )
-        t2 = await c.process_candidate_turn.execute(
-            ProcessCandidateTurnRequestDTO(
-                tenant_id=tid,
-                session_id=init_iv.session_id,
-                turn_number=2,
-                checkpoint_version=t1.updated_checkpoint_version,
-                candidate_utterance=t2_ans,
-                remaining_seconds=1440,
-                telemetry=_clean_telemetry(1050 if idx == 0 else 1490, wpm=140.0 - idx * 8.0),
-                correlation_id=f"corr-seed-turn2-{idx}",
-            )
-        )
-        await c.complete_interview_session.execute(
-            CompleteInterviewSessionRequestDTO(
-                tenant_id=tid,
-                session_id=init_iv.session_id,
-                checkpoint_version=t2.updated_checkpoint_version,
-            )
-        )
         completed_session_ids.append(init_iv.session_id)
         report = bundle.repositories.report_repo.get_by_session_id(tid, init_iv.session_id)
         if report is not None:
