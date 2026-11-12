@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { BatchFileManifestWire } from "../../../application/ports/outbound";
 import { validateBatchManifest } from "../../../application/screening/batch_monitor_coordinator";
 import { ValidationDomainError } from "../../../domain/shared/errors";
+import { useDemoBootstrap } from "../../hooks/useDemoBootstrap";
 import { useBatchMonitor } from "../../hooks/useBatchMonitor";
 
 export interface BatchMonitorViewProps {
@@ -52,22 +53,56 @@ export function BatchMonitorView({
 }: BatchMonitorViewProps): React.JSX.Element {
   const { state, initiateBatch, subscribeBatch, refreshSnapshot, stop } =
     useBatchMonitor();
+  const { state: demoState, simulateLiveBatch } = useDemoBootstrap();
 
   const [requisitionId, setRequisitionId] = useState("req-staff-backend-01");
   const [batchLabel, setBatchLabel] = useState("Q4 Pipeline Bulk Screening");
   const [streamPath, setStreamPath] = useState(
-    `/api/v1/screening-batches/${batchId}/events`,
+    `${demoState.apiBaseUrl}/v1/screening-batches/${batchId}/events`,
   );
   const [selectedEntries, setSelectedEntries] = useState<
     readonly PendingLocalFileEntry[]
   >([]);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [simRunning, setSimRunning] = useState(false);
+  const loadedSeedBatchRef = useRef(false);
+
+  useEffect(() => {
+    if (demoState.isBackendOnline && !loadedSeedBatchRef.current) {
+      loadedSeedBatchRef.current = true;
+      setRequisitionId(demoState.manifest.requisition_id);
+      void refreshSnapshot(batchId);
+    }
+  }, [
+    batchId,
+    demoState.isBackendOnline,
+    demoState.manifest.requisition_id,
+    refreshSnapshot,
+  ]);
 
   useEffect(() => {
     return () => {
       stop();
     };
   }, [stop]);
+
+  const handleSimulateBatch = async (): Promise<void> => {
+    setLocalError(null);
+    setSimRunning(true);
+    try {
+      const sim = await simulateLiveBatch();
+      const fullStreamUrl = `${demoState.apiBaseUrl}${sim.sse_events_path}`;
+      setStreamPath(fullStreamUrl);
+      await refreshSnapshot(sim.batch_id);
+      subscribeBatch(sim.batch_id, fullStreamUrl);
+    } catch (err) {
+      setLocalError(
+        err instanceof Error ? err.message : "Failed to start live batch simulation.",
+      );
+    } finally {
+      setSimRunning(false);
+    }
+  };
 
   const progressPercent =
     state.totalFiles > 0
@@ -182,6 +217,14 @@ export function BatchMonitorView({
               disabled={selectedEntries.length === 0}
             >
               Initiate Batch ({selectedEntries.length} selected)
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!demoState.isBackendOnline || simRunning}
+              onClick={() => void handleSimulateBatch()}
+            >
+              {simRunning ? "Simulating..." : "Simulate Live Batch (SSE)"}
             </button>
             <button
               type="button"

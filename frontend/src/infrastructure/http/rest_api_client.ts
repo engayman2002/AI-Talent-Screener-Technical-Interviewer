@@ -8,15 +8,19 @@ import {
   ProblemDetailsError,
   type ApiSuccessEnvelope,
   type BackendComparisonMatrixWire,
+  type DemoSeedManifestWire,
   type EvaluationReportResponseWire,
   type FieldViolationWire,
+  type HealthReadyWire,
   type InitiateBatchRequestWire,
   type InitiateBatchResponseWire,
+  type OpsMetricsSnapshotWire,
   type ProblemDetailsPayload,
   type RecruiterOverrideRequestWire,
   type RestApiClientPort,
   type RestRequestOptions,
   type ScreeningBatchStatusWire,
+  type SimulateDemoBatchResponseWire,
 } from "../../application/ports/outbound";
 
 export interface HttpResponseLike {
@@ -204,6 +208,39 @@ export class FetchRestApiClientAdapter implements RestApiClientPort {
       path: `/v1/evaluations/${encodeURIComponent(reportId)}/overrides`,
       body: payload as unknown as Readonly<Record<string, unknown>>,
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+    });
+    return res.data;
+  }
+
+  public async fetchDemoManifest(): Promise<DemoSeedManifestWire> {
+    const res = await this.request<DemoSeedManifestWire>({
+      method: "GET",
+      path: "/v1/ops/demo-manifest",
+    });
+    return res.data;
+  }
+
+  public async simulateDemoBatch(): Promise<SimulateDemoBatchResponseWire> {
+    const res = await this.request<SimulateDemoBatchResponseWire>({
+      method: "POST",
+      path: "/v1/ops/demo-simulate-batch",
+      body: {},
+    });
+    return res.data;
+  }
+
+  public async fetchHealthReady(): Promise<HealthReadyWire> {
+    const res = await this.request<HealthReadyWire>({
+      method: "GET",
+      path: "/health/ready",
+    });
+    return res.data;
+  }
+
+  public async fetchOpsMetrics(): Promise<OpsMetricsSnapshotWire> {
+    const res = await this.request<OpsMetricsSnapshotWire>({
+      method: "GET",
+      path: "/v1/ops/metrics",
     });
     return res.data;
   }

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useDemoBootstrap } from "../../hooks/useDemoBootstrap";
 import { useInterviewController } from "../../hooks/useInterviewController";
 
 export interface InterviewPortalViewProps {
@@ -45,12 +46,36 @@ export function InterviewPortalView({
     terminateSession,
   } = useInterviewController();
 
+  const { state: demoState } = useDemoBootstrap();
   const [ticketToken, setTicketToken] = useState("candidate-demo-ticket");
   const [wsUrl, setWsUrl] = useState(
-    `wss://localhost:8000/v1/ws/interviews/${sessionId}`,
+    `${demoState.wsBaseUrl}/v1/interviews/${encodeURIComponent(sessionId)}/ws`,
   );
   const [tenantId, setTenantId] = useState("tenant-default");
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  const syncedDemoRef = useRef(false);
+
+  useEffect(() => {
+    if (demoState.isBackendOnline && !syncedDemoRef.current) {
+      syncedDemoRef.current = true;
+      const jwt =
+        demoState.manifest.candidate_jwt || demoState.manifest.recruiter_jwt;
+      if (jwt.trim().length > 0) {
+        setTicketToken(jwt);
+      }
+      setTenantId(demoState.manifest.tenant_id);
+      setWsUrl(
+        `${demoState.wsBaseUrl}/v1/interviews/${encodeURIComponent(sessionId)}/ws`,
+      );
+    }
+  }, [
+    demoState.isBackendOnline,
+    demoState.manifest.candidate_jwt,
+    demoState.manifest.recruiter_jwt,
+    demoState.manifest.tenant_id,
+    demoState.wsBaseUrl,
+    sessionId,
+  ]);
 
   const canConnect =
     snapshot.state === "IDLE" || snapshot.state === "TERMINATED_ERROR";

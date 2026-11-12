@@ -67,24 +67,28 @@ class _VersionTracker:
     """Bounded per-DB registry of hydrated/saved aggregate OCC base versions."""
 
     def __init__(self) -> None:
-        self._versions: OrderedDict[tuple[str, int], int] = OrderedDict()
+        self._versions: OrderedDict[tuple[str, int, str], int] = OrderedDict()
+
+    @staticmethod
+    def _key(table: str, agg: AggregateRoot[Any]) -> tuple[str, int, str]:
+        return (table, id(agg), str(agg.id))
 
     def get(self, table: str, agg: AggregateRoot[Any]) -> int | None:
-        key = (table, id(agg))
+        key = self._key(table, agg)
         val = self._versions.get(key)
         if val is not None:
             self._versions.move_to_end(key)
         return val
 
     def set(self, table: str, agg: AggregateRoot[Any], version: int) -> None:
-        key = (table, id(agg))
+        key = self._key(table, agg)
         self._versions[key] = version
         self._versions.move_to_end(key)
         while len(self._versions) > _MAX_TRACKED_INSTANCES:
             self._versions.popitem(last=False)
 
     def delete(self, table: str, agg: AggregateRoot[Any]) -> None:
-        self._versions.pop((table, id(agg)), None)
+        self._versions.pop(self._key(table, agg), None)
 
 
 _TRACKERS_BY_DB: dict[int, _VersionTracker] = {}

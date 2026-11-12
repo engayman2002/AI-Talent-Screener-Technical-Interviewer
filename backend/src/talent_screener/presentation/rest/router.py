@@ -66,10 +66,10 @@ class RouteSpec:
 
 def _normalize_v1_path(raw_path: str) -> str:
     stripped = raw_path.split("?", maxsplit=1)[0].rstrip("/") or "/"
-    if stripped.startswith("/api/v1/"):
+    if stripped in {"/api", "/api/"}:
+        return "/"
+    if stripped.startswith("/api/"):
         return stripped.removeprefix("/api")
-    if stripped == "/api/v1":
-        return "/v1"
     return stripped
 
 
@@ -251,6 +251,18 @@ class RestApiRouter:
         ) -> HttpResponse:
             _ = params
             return await ops.metrics(req, p, meta)
+
+        async def _ops_demo_manifest(
+            req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
+        ) -> HttpResponse:
+            _ = (params, p)
+            return await ops.demo_manifest(req, meta)
+
+        async def _ops_demo_simulate(
+            req: HttpRequest, params: dict[str, str], p: PrincipalContext, meta: ResponseMeta
+        ) -> HttpResponse:
+            _ = (params, p)
+            return await ops.simulate_demo_batch(req, meta)
 
         return (
             RouteSpec(
@@ -467,6 +479,26 @@ class RestApiRouter:
                 rate_bucket="governance_admin",
                 supports_idempotency=False,
                 handler=_ops_metrics,
+            ),
+            RouteSpec(
+                method="GET",
+                pattern=re.compile(r"^/v1/ops/demo-manifest$"),
+                required_scopes=(),
+                any_of_scopes=False,
+                rate_bucket="ops_health",
+                supports_idempotency=False,
+                handler=_ops_demo_manifest,
+                requires_auth=False,
+            ),
+            RouteSpec(
+                method="POST",
+                pattern=re.compile(r"^/v1/ops/demo-simulate-batch$"),
+                required_scopes=(),
+                any_of_scopes=False,
+                rate_bucket="ops_health",
+                supports_idempotency=False,
+                handler=_ops_demo_simulate,
+                requires_auth=False,
             ),
         )
 

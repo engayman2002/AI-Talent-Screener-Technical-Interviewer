@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { RecommendationBand, VerificationClassification } from "../../../domain/shared/types";
+import { useDemoBootstrap } from "../../hooks/useDemoBootstrap";
 import { useComparisonMatrix } from "../../hooks/useComparisonMatrix";
 
 export interface ComparisonMatrixViewProps {
@@ -32,6 +33,7 @@ export function ComparisonMatrixView({
     openEvidenceDrawer,
     submitOverride,
   } = useComparisonMatrix();
+  const { state: demoState } = useDemoBootstrap();
 
   const [candidateIdsCsv, setCandidateIdsCsv] = useState(
     "cand-001,cand-002,cand-003",
@@ -40,6 +42,35 @@ export function ComparisonMatrixView({
   const [overrideBand, setOverrideBand] = useState<RecommendationBand>("HIRE");
   const [overrideJustification, setOverrideJustification] = useState("");
   const [uiNotice, setUiNotice] = useState<string | null>(null);
+  const autoLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const shortlisted = demoState.manifest.shortlisted_candidate_ids;
+    if (
+      demoState.isBackendOnline &&
+      !autoLoadedRef.current &&
+      shortlisted.length >= 2
+    ) {
+      autoLoadedRef.current = true;
+      setCandidateIdsCsv(shortlisted.join(","));
+      if (demoState.manifest.report_ids.length > 0 && overrideReportId.trim() === "") {
+        setOverrideReportId(demoState.manifest.report_ids[0] ?? "");
+      }
+      void loadFromBackend({
+        requisitionId,
+        candidateProfileIds: shortlisted,
+        blindMode: state.blindMode,
+      });
+    }
+  }, [
+    demoState.isBackendOnline,
+    demoState.manifest.report_ids,
+    demoState.manifest.shortlisted_candidate_ids,
+    loadFromBackend,
+    overrideReportId,
+    requisitionId,
+    state.blindMode,
+  ]);
 
   const handleLoadMatrix = async (ev: React.FormEvent): Promise<void> => {
     ev.preventDefault();

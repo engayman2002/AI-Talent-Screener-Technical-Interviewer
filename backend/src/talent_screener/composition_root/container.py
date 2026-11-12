@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from uuid import UUID
@@ -106,6 +107,10 @@ from talent_screener.infrastructure.ai_adapters.langgraph_interview import (
     SocraticProbeModelProtocol,
     TurnEvaluationModelProtocol,
 )
+from talent_screener.infrastructure.ai_adapters.live_llm_provider import (
+    OpenAiCompatibleJsonLlmClient,
+    build_live_llm_client_from_env,
+)
 from talent_screener.infrastructure.ai_adapters.vector_store import (
     DenseEmbeddingClientProtocol,
     HybridVectorSearchAdapter,
@@ -183,6 +188,7 @@ from talent_screener.presentation.rest import (
     RecruitmentController,
     RestApiRouter,
 )
+from talent_screener.presentation.server import AsgiAppFn, create_asgi_app
 from talent_screener.presentation.websocket import (
     WebSocketClusterHooks,
     WebSocketInterviewGateway,
@@ -971,6 +977,26 @@ class Phase8PipelineBundle:
     ops_controller: OpsController
     rest_router: RestApiRouter
     ws_gateway: WebSocketInterviewGateway
+    live_llm_client: OpenAiCompatibleJsonLlmClient | None = None
+
+    def llm_runtime_metadata(self) -> tuple[str, str, str]:
+        """Return (mode, provider, model) for runtime observability and demo manifests."""
+        if self.live_llm_client is not None and self.live_llm_client.config.is_live_enabled:
+            cfg = self.live_llm_client.config
+            return ("live", cfg.provider, cfg.model)
+        return ("deterministic", "deterministic", "deterministic-offline-v1")
+
+    def create_asgi_app(
+        self,
+        *,
+        cors_allowed_origins: tuple[str, ...] = ("*",),
+    ) -> AsgiAppFn:
+        """Assemble the standards-compliant ASGI 3.0 HTTP/SSE/OpenAPI/WS application."""
+        return create_asgi_app(
+            rest_router=self.rest_router,
+            ws_gateway=self.ws_gateway,
+            cors_allowed_origins=cors_allowed_origins,
+        )
 
     def create_peer_ws_gateway(self, *, node_id: str) -> WebSocketInterviewGateway:
         """Instantiate a peer WebSocket gateway sharing DB, lock, checkpointer & backplane."""
@@ -1023,6 +1049,8 @@ def build_phase8_container(
     bucket_matching_reserve: int = 15_000,
     bucket_refill_tokens_per_second: float = 5_000.0,
     clock_fn: Callable[[], float] | None = None,
+    demo_mode_enabled: bool = True,
+    live_llm_client: OpenAiCompatibleJsonLlmClient | None = None,
 ) -> Phase8PipelineBundle:
     """Assemble full Phase 1-8 stack: Security, OTel, FinOps, Drift, WS Backplane & SQL."""
     db = (
@@ -1160,18 +1188,50 @@ def build_phase8_container(
         return (sql_ok and vector_ok and ckpt_ok and not draining), checks
 
     def _metrics_provider() -> Mapping[str, object]:
+        llm_stats = (
+            live_llm_client.telemetry_counts
+            if live_llm_client is not None
+            else {
+                "provider": "deterministic",
+                "model": "deterministic-offline-v1",
+                "live_mode": "deterministic",
+                "live_calls": 0,
+                "fallback_calls": 0,
+            }
+        )
         return {
             "latency_percentiles": otel_tracer.summarize_operations(),
             "finops_ledger": finops_controller.summarize_ledger(),
             "rubric_drift": rubric_drift_monitor.summarize(),
             "autoscaler": worker_autoscaler.summarize(),
             "gateway_backplane": ws_backplane.summarize(),
+            "llm_runtime": llm_stats,
         }
+
+    bundle_holder: list[Phase8PipelineBundle] = []
+
+    async def _demo_manifest_provider() -> Mapping[str, object]:
+        from talent_screener.composition_root.demo_seeder import (
+            seed_interactive_demo_environment,
+        )
+
+        manifest = await seed_interactive_demo_environment(bundle_holder[0])
+        return manifest.to_dict()
+
+    async def _demo_simulate_batch() -> Mapping[str, object]:
+        from talent_screener.composition_root.demo_seeder import (
+            simulate_live_demo_batch,
+        )
+
+        return await simulate_live_demo_batch(bundle_holder[0])
 
     ops_controller = OpsController(
         node_id=ws_node_id,
         readiness_probe_fn=_readiness_probe,
         metrics_provider_fn=_metrics_provider,
+        demo_manifest_provider_fn=_demo_manifest_provider,
+        demo_simulate_batch_fn=_demo_simulate_batch,
+        demo_mode_enabled=demo_mode_enabled,
     )
 
     (
@@ -1197,7 +1257,7 @@ def build_phase8_container(
         ws_cluster_hooks=ws_cluster_hooks,
     )
 
-    return Phase8PipelineBundle(
+    bundle = Phase8PipelineBundle(
         db_manager=db,
         container=container,
         repositories=repositories,
@@ -1230,10 +1290,40 @@ def build_phase8_container(
         ops_controller=ops_controller,
         rest_router=rest_router,
         ws_gateway=ws_gateway,
+        live_llm_client=live_llm_client,
     )
+    bundle_holder.append(bundle)
+    return bundle
 
 
 build_production_container = build_phase8_container
+
+
+def build_runtime_container_from_env(
+    environ: Mapping[str, str] | None = None,
+) -> Phase8PipelineBundle:
+    """Assemble full-stack runtime container from environment variables (.env friendly)."""
+    env = environ if environ is not None else os.environ
+    dsn = env.get("DB_DSN", ":memory:").strip() or ":memory:"
+    ws_node_id = env.get("WS_NODE_ID", "ws-node-1").strip() or "ws-node-1"
+    raw_secret = env.get("JWT_SECRET", "").strip()
+    jwt_key = raw_secret.encode("utf-8") if len(raw_secret.encode("utf-8")) >= 16 else None
+    demo_raw = env.get("DEMO_SEED_ENABLED", "true").strip().lower()
+    demo_mode_enabled = demo_raw not in {"0", "false", "no", "off"}
+
+    live_client = build_live_llm_client_from_env(env)
+    return build_phase8_container(
+        dsn=dsn,
+        ws_node_id=ws_node_id,
+        jwt_signing_key=jwt_key,
+        demo_mode_enabled=demo_mode_enabled,
+        live_llm_client=live_client,
+        llm_client=live_client,
+        question_model=live_client,
+        evaluation_model=live_client,
+        socratic_model=live_client,
+        synthesis_model=live_client,
+    )
 
 
 class ApplicationContainer:

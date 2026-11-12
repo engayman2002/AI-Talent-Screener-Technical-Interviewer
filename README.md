@@ -154,7 +154,58 @@ Manual high-volume technical screening breaks down under heterogeneous resume fo
   - `ADR-012` 4-layer defense pipeline (`NonceDelimiterEnvelope`, `CanaryTokenLeakVerifier`, `DualLlmQuarantineExtractor`, `AdversarialStrikeTracker`, `DefenseInDepthFirewall`)
   - `ADR-013` W3C TraceContext OpenTelemetry GenAI tracer with automated PII scrubbing (`StructuredOpenTelemetryTracerAdapter`), 80%/100% FinOps model tier routing (`MultiTenantFinOpsController`), and formal statistical rubric drift & calibration monitoring (`compute_psi`, `compute_ks_two_sample`, `compute_cohens_kappa`, `RubricDriftMonitor`)
   - `StatelessWebSocketPubSubBackplane` with turn-boundary graceful node drain + L2 SQL checkpoint failover, hysteresis `QueueDepthWorkerAutoscaler`, and operational `/health/live`, `/health/ready`, `/v1/ops/metrics` REST endpoints wired via `build_production_container()`
-  - Production multi-stage non-root Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`), `docker-compose.production.yml`, and `.github/workflows/ci.yml` (All 8 Phases **Complete**)
+  - Production multi-stage non-root Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`), `docker-compose.production.yml`, and `.github/workflows/ci.yml`
+- [x] **Phase 9: Live ASGI/HTTP/SSE/WebSocket Runtime, Pluggable Live LLM Provider Bridge, Idempotent Interactive Demo Seeder & Full-Stack Command Center** — **Complete (`v1.0.0`)**
+  - Zero-dependency ASGI 3.0 application + standalone pure-stdlib `AsyncStdlibHttpWsServer` (`presentation/server.py`) serving CORS-enabled REST, SSE (`text/event-stream`), RFC 6455 full-duplex WebSockets (`/v1/interviews/{session_id}/ws`), OpenAPI 3.1.0 (`/openapi.json`), and interactive Swagger UI (`/docs`)
+  - Pluggable `OpenAiCompatibleJsonLlmClient` (`live_llm_provider.py`) supporting Groq (`GROQ_API_KEY` / `llama-3.3-70b-versatile`), OpenAI (`OPENAI_API_KEY` / `gpt-4o-mini`), Google Gemini (`GEMINI_API_KEY` / `gemini-2.0-flash`), or any custom OpenAI-compatible `LLM_BASE_URL` endpoint — with automatic Zero-Key Deterministic Fallback
+  - Idempotent `seed_interactive_demo_environment()` (`demo_seeder.py`) provisioning **Acme AI Engineering**, a published **Senior AI Systems & Full-Stack Engineer** requisition (Python & TypeScript gatekeepers), 4 processed CVs (3 finalists + 1 gatekeeper-rejected), 3 completed L2..L5 `EvaluationReport`s, 1 active `IN_PROGRESS` Turn 1 session, plus live background batch simulation (`POST /v1/ops/demo-simulate-batch`) & manifest bootstrap (`GET /v1/ops/demo-manifest`)
+  - Live Next.js 15 Showcase integration (`CommandCenterView`, `InterviewPortalView`, `BatchMonitorView`, `ComparisonMatrixView`) with `/api/*` rewrite proxying, live readiness/FinOps/Drift panels, and one-click SSE batch simulation
+
+---
+
+## Quickstart & Live Interactive Demo (`v1.0.0`)
+
+Experience the entire platform locally in under 60 seconds with **Zero API Keys Required** (Deterministic Mode), or attach a Groq/OpenAI/Gemini key for live cloud reasoning.
+
+### 1. Zero-Key Deterministic Showcase Mode (Instant Local Launch)
+
+```bash
+cp .env.example .env
+
+# Terminal 1 — Boot ASGI/HTTP/SSE/WebSocket backend + seed interactive Acme AI demo (http://127.0.0.1:8000)
+make dev-backend
+
+# Terminal 2 — Boot Next.js 15 Command Center (http://127.0.0.1:3000)
+make dev-frontend
+```
+
+Once running:
+- **Executive Command Center:** `http://127.0.0.1:3000` (auto-bootstraps `/v1/ops/demo-manifest`, displays live FinOps/Drift metrics, and provides 1-click links to the active Turn 1 session, SSE Batch Monitor, and Candidate Comparison Matrix)
+- **Interactive Swagger UI:** `http://127.0.0.1:8000/docs` (plus raw spec at `/openapi.json`)
+- **Pre-seeded Demo Manifest:** `http://127.0.0.1:8000/v1/ops/demo-manifest`
+
+### 2. Optional Live Cloud LLM Mode (Groq / OpenAI / Gemini)
+
+Edit `.env` (or export environment variables) with any compatible provider key:
+
+```bash
+# Option A: Groq Cloud (fastest inference)
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_your_key_here
+LLM_MODEL=llama-3.3-70b-versatile
+
+# Option B: OpenAI
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=sk-your_key_here
+# LLM_MODEL=gpt-4o-mini
+
+# Option C: Google Gemini (OpenAI-compatible endpoint)
+# LLM_PROVIDER=gemini
+# GEMINI_API_KEY=your_gemini_key_here
+# LLM_MODEL=gemini-2.0-flash
+```
+
+Restart `make dev-backend` — `OpenAiCompatibleJsonLlmClient` routes CV extraction, question generation, Socratic probing, and synthesis through your provider while automatically falling back to deterministic engines on timeout or rate limits.
 
 ---
 
@@ -225,5 +276,5 @@ docker compose -f docker-compose.production.yml up --build -d
 ```
 
 Verified monorepo baseline metrics:
-- **Backend:** `94 passed` across unit, integration & Clean Architecture/SOLID fitness tests (`90.62%` combined statement+branch coverage), `mypy --strict` passing across `248 source files`, `ruff` passing, and `lint-imports` (`5 kept, 0 broken`).
-- **Frontend:** `tsc --noEmit` (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`) passing and Vitest suite (`4 test files, 17 tests passed`, including TypeScript AST Clean Architecture boundary enforcement).
+- **Backend:** `96 passed` across unit, integration & Clean Architecture/SOLID fitness tests (`90.21%` combined statement+branch coverage), `mypy --strict` passing across `255 source files`, `ruff` passing, and `lint-imports` (`5 kept, 0 broken`).
+- **Frontend:** `tsc --noEmit` (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`), Next.js 15 production build (`4/4` routes), and Vitest suite (`5 test files, 19 tests passed`, including TypeScript AST Clean Architecture boundary enforcement).

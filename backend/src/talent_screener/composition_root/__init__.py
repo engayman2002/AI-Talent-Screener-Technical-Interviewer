@@ -18,8 +18,14 @@ from talent_screener.composition_root.container import (
     build_phase6_container,
     build_phase8_container,
     build_production_container,
+    build_runtime_container_from_env,
     build_sql_repositories,
     build_ws_cluster_hooks,
+)
+from talent_screener.composition_root.demo_seeder import (
+    DemoSeedManifest,
+    seed_interactive_demo_environment,
+    simulate_live_demo_batch,
 )
 from talent_screener.composition_root.protocols import (
     ApplicationContainerPort,
@@ -30,6 +36,7 @@ from talent_screener.composition_root.protocols import (
 __all__ = [
     "ApplicationContainer",
     "ApplicationContainerPort",
+    "DemoSeedManifest",
     "EventChoreographyWiringPort",
     "ExternalAdapterRegistry",
     "Phase3PipelineBundle",
@@ -48,6 +55,9 @@ __all__ = [
     "build_phase6_container",
     "build_phase8_container",
     "build_production_container",
+    "build_runtime_container_from_env",
     "build_sql_repositories",
     "build_ws_cluster_hooks",
+    "seed_interactive_demo_environment",
+    "simulate_live_demo_batch",
 ]

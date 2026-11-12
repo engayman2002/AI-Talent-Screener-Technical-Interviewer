@@ -5,6 +5,7 @@
 
 import { ComparisonMatrixCoordinator } from "../application/evaluation/comparison_coordinator";
 import { LiveInterviewSessionCoordinator } from "../application/interview/session_coordinator";
+import { DemoBootstrapCoordinator } from "../application/ops/demo_bootstrap_coordinator";
 import type { RestApiClientPort } from "../application/ports/outbound";
 import { BatchMonitorCoordinator } from "../application/screening/batch_monitor_coordinator";
 import { WebAudioRingBufferAdapter } from "../infrastructure/audio/web_audio_adapter";
@@ -18,11 +19,14 @@ export interface FrontendServicesBundle {
   readonly interviewCoordinator: LiveInterviewSessionCoordinator;
   readonly batchCoordinator: BatchMonitorCoordinator;
   readonly comparisonCoordinator: ComparisonMatrixCoordinator;
+  readonly demoCoordinator: DemoBootstrapCoordinator;
 }
 
 export interface FrontendContainerConfig {
   readonly apiBaseUrl: string;
+  readonly wsBaseUrl?: string;
   readonly getAuthToken: () => string | null;
+  readonly setAuthToken?: (token: string | null) => void;
   readonly accommodatedTextMode?: boolean;
 }
 
@@ -37,6 +41,7 @@ export function createFrontendServices(
   const audio = new WebAudioRingBufferAdapter();
   const telemetry = new BrowserIntegrityTelemetryAdapter();
   const sse = new RafCoalescedBatchSseAdapter();
+  const wsBaseUrl = (config.wsBaseUrl ?? "ws://127.0.0.1:8000").replace(/\/+$/, "");
 
   return {
     restClient,
@@ -53,5 +58,11 @@ export function createFrontendServices(
       sse,
     }),
     comparisonCoordinator: new ComparisonMatrixCoordinator(restClient),
+    demoCoordinator: new DemoBootstrapCoordinator({
+      api: restClient,
+      apiBaseUrl: config.apiBaseUrl,
+      wsBaseUrl,
+      setAuthToken: config.setAuthToken ?? (() => undefined),
+    }),
   };
 }

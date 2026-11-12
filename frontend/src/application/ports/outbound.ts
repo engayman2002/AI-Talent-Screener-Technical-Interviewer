@@ -172,6 +172,69 @@ export interface EvaluationReportResponseWire {
   readonly override_count: number;
 }
 
+export interface DemoCandidateSummaryWire {
+  readonly candidate_profile_id: string;
+  readonly display_name: string;
+  readonly filename: string;
+  readonly match_score: number;
+  readonly tier: string;
+  readonly report_id: string | null;
+  readonly recommendation_band: string | null;
+}
+
+export interface DemoSeedManifestWire {
+  readonly tenant_id: string;
+  readonly tenant_slug: string;
+  readonly organization_name: string;
+  readonly requisition_id: string;
+  readonly requisition_title: string;
+  readonly batch_id: string;
+  readonly candidate_profile_ids: readonly string[];
+  readonly shortlisted_candidate_ids: readonly string[];
+  readonly rejected_candidate_id: string | null;
+  readonly completed_session_ids: readonly string[];
+  readonly active_session_id: string;
+  readonly active_session_candidate_id: string;
+  readonly active_session_turn_number: number;
+  readonly active_session_difficulty: number;
+  readonly active_session_question: string;
+  readonly active_session_checkpoint_version: string;
+  readonly report_ids: readonly string[];
+  readonly candidate_summaries: readonly DemoCandidateSummaryWire[];
+  readonly recruiter_jwt: string;
+  readonly candidate_jwt: string;
+  readonly llm_mode: string;
+  readonly llm_provider: string;
+  readonly llm_model: string;
+  readonly seeded_at: string;
+}
+
+export interface SimulateDemoBatchResponseWire {
+  readonly batch_id: string;
+  readonly tenant_id: string;
+  readonly requisition_id: string;
+  readonly file_count: number;
+  readonly sse_events_path: string;
+  readonly status_path: string;
+  readonly status: string;
+}
+
+export interface HealthReadyWire {
+  readonly status: string;
+  readonly node_id: string;
+  readonly checks: Readonly<Record<string, unknown>>;
+  readonly timestamp: string;
+}
+
+export interface OpsMetricsSnapshotWire {
+  readonly latency_percentiles: Readonly<Record<string, unknown>>;
+  readonly finops_ledger: Readonly<Record<string, unknown>>;
+  readonly rubric_drift: Readonly<Record<string, unknown>>;
+  readonly autoscaler?: Readonly<Record<string, unknown>>;
+  readonly gateway_backplane?: Readonly<Record<string, unknown>>;
+  readonly llm_runtime?: Readonly<Record<string, unknown>>;
+}
+
 export interface RestApiClientPort {
   request<T>(options: RestRequestOptions): Promise<ApiSuccessEnvelope<T>>;
   initiateScreeningBatch(
@@ -188,6 +251,10 @@ export interface RestApiClientPort {
     payload: RecruiterOverrideRequestWire,
     idempotencyKey?: string,
   ): Promise<EvaluationReportResponseWire>;
+  fetchDemoManifest(): Promise<DemoSeedManifestWire>;
+  simulateDemoBatch(): Promise<SimulateDemoBatchResponseWire>;
+  fetchHealthReady(): Promise<HealthReadyWire>;
+  fetchOpsMetrics(): Promise<OpsMetricsSnapshotWire>;
 }
 
 // ---------------------------------------------------------------------------

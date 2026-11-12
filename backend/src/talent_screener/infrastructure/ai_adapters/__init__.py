@@ -39,6 +39,13 @@ from talent_screener.infrastructure.ai_adapters.langgraph_interview import (
     SocraticProbeModelProtocol,
     TurnEvaluationModelProtocol,
 )
+from talent_screener.infrastructure.ai_adapters.live_llm_provider import (
+    JsonHttpTransportFn,
+    LiveLlmConfig,
+    LlmProviderKind,
+    OpenAiCompatibleJsonLlmClient,
+    build_live_llm_client_from_env,
+)
 from talent_screener.infrastructure.ai_adapters.vector_store import (
     Bm25SparseEncoder,
     ChildChunk,
@@ -73,10 +80,14 @@ __all__ = [
     "InterviewGraphState",
     "InterviewStateCheckpointerProtocol",
     "InterviewSynthesisModelProtocol",
+    "JsonHttpTransportFn",
     "LangChainDocumentParserAdapter",
     "LangGraphAdaptiveInterviewAdapter",
+    "LiveLlmConfig",
+    "LlmProviderKind",
     "NormalizedDocumentTree",
     "NormalizedSection",
+    "OpenAiCompatibleJsonLlmClient",
     "ParentChunk",
     "QuestionGenerationModelProtocol",
     "RawImpactMetricPayload",
@@ -94,4 +105,5 @@ __all__ = [
     "SttDriverProtocol",
     "TtsDriverProtocol",
     "TurnEvaluationModelProtocol",
+    "build_live_llm_client_from_env",
 ]

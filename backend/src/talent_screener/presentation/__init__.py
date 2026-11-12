@@ -8,6 +8,7 @@ from talent_screener.presentation.middleware import (
     RbacScope,
     TenantRateLimiter,
 )
+from talent_screener.presentation.openapi import build_openapi_spec, render_swagger_ui_html
 from talent_screener.presentation.rest import RestApiRouter
 from talent_screener.presentation.schemas import (
     ApiResponseEnvelope,
@@ -15,10 +16,17 @@ from talent_screener.presentation.schemas import (
     HttpResponse,
     ProblemDetailsResponse,
 )
+from talent_screener.presentation.server import (
+    AsgiAppFn,
+    AsyncStdlibHttpWsServer,
+    create_asgi_app,
+)
 from talent_screener.presentation.websocket import WebSocketInterviewGateway
 
 __all__ = [
     "ApiResponseEnvelope",
+    "AsgiAppFn",
+    "AsyncStdlibHttpWsServer",
     "BearerTokenAuthenticator",
     "ExceptionToProblemDetailsTranslator",
     "HttpRequest",
@@ -30,4 +38,7 @@ __all__ = [
     "RestApiRouter",
     "TenantRateLimiter",
     "WebSocketInterviewGateway",
+    "build_openapi_spec",
+    "create_asgi_app",
+    "render_swagger_ui_html",
 ]
